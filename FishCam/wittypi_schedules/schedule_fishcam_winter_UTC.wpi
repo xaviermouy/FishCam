@@ -1,0 +1,16 @@
+# Turn on Raspberry Pi at 15:00, turn it off at 02:55 UTC
+# Repeat above everyday
+
+BEGIN	2015-08-01 15:00:00	
+END	2025-07-31 23:59:59
+
+# Daylight schedule (3-hour cycles)
+ON	H2 M55		# ON  => 15:00 - 17:55
+OFF	M5		# OFF 
+ON	H2 M55		# ON  => 18:00 - 20:55
+OFF	M5		# OFF 
+ON	H2 M55		# ON  => 21:00 - 23:55
+OFF	M5		# OFF 
+ON	H2 M55		# ON  => 00:00 - 02:55
+# Night schedule (1-hour cycles)
+OFF	H12 M5		# OFF 

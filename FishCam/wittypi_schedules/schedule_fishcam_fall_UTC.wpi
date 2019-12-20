@@ -1,0 +1,17 @@
+# Turn on Raspberry Pi at 12:00 UTC (5:00 PDT), turn it off at 04:00 UTC (21:00 PDT)
+# reboots every 4 hours
+# Repeat above everyday
+
+BEGIN	2015-08-01 12:00:00	
+END	2025-07-31 23:59:59
+
+# Day schedule (4-hour cycles during the day from 5:00-21:00 PDT)
+ON	H3 M55		# ON  => 12:00 - 15:55 UTC
+OFF	M5		# OFF 
+ON	H3 M55		# ON  => 16:00 - 19:55 UTC
+OFF	M5		# OFF 
+ON	H3 M55		# ON  => 20:00 - 23:55 UTC
+OFF	M5		# OFF 
+ON	H4		# ON  => 00:00 - 04:00 UTC
+# Night schedule (shut down from 21:00-05:00 PDT)
+OFF	H8		# OFF  => 04:00 - 12:00 UTC
