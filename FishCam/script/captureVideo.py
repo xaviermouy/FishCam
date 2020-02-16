@@ -6,16 +6,6 @@ import logging
 import subprocess
 import sys
 
-def getThrottleStatus():
-	#0: under-voltage (0xX0001)
-	#1: arm frequency capped (0xX0002 or 0xX0003 with under-voltage)
-	#2: currently throttled (0xX0004 or 0xX0005 with under-voltage)
-	#16: under-voltage has occurred (0x1000X)
-	#17: arm frequency capped has occurred (0x2000X or 0x3000X also under-voltage occurred)
-	#18: throttling has occurred (0x4000X or 0x5000X also under-voltage occurred)	
-	p = subprocess.check_output(["vcgencmd","get_throttled"])
-	logging.info('Throttle status: ' + str(p))
-
 def initVideoSettings():
     videoSettings = {
         'duration': 300,      # files duration in sec
@@ -35,8 +25,6 @@ def initVideoSettings():
     return videoSettings
 
 def captureVideo(outDir,iterFileName,videoSettings,flagname=''):
-    # Check if the raspi experiences under-voltage and is throttled
-    getThrottleStatus()
     # Open iterator file for output filenames
     curDir = os.getcwd()
     iterFile = open(os.path.join(curDir,iterFileName),'r') 
@@ -160,8 +148,8 @@ def captureVideo_test(outDir,iterFileName,duration=10,flagname=''):
 
 def main():
     # Parameters 
-    outDir=r'/home/pi/Desktop/FishProject/data'
-    logDir=r'/home/pi/Desktop/FishProject/logs'
+    outDir=r'../data'
+    logDir=r'../logs'
     iterFileName = r'iterator.config'
     FishCamIDFileName = r'FishCamID.config'
     BuzzerEnabled = True
@@ -172,6 +160,8 @@ def main():
         os.mkdir(logDir)
     logging.basicConfig(filename=os.path.join(logDir,time.strftime('%Y%m%dT%H%M%S') +'.log'), level=logging.DEBUG,format='%(asctime)s %(levelname)s %(name)s %(message)s')
     logging.info('Video acquisition started')
+    if os.path.isdir(outDir) == False:
+        os.mkdir(outDir)
     try: 
         curDir = os.getcwd() # get current working directory
         # Get FishCam ID
