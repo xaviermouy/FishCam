@@ -1,6 +1,4 @@
-This is the software repository for the FishCam paper published in the journal  HardwareX
-
-#FishCam: A low-cost open source autonomous camera for aquatic research
+# FishCam: A low-cost open source autonomous camera for aquatic research
 
 Xavier Mouy (1,2), Morgan Black (3), Kieran Cox (3), Jessica Qualley (3), Callum Mireault (4), Stan Dosso (1), and Francis Juanes (3)
 
