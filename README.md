@@ -3,11 +3,13 @@
 ## Description:
 These are all the scripts needed to run the FishCam. See HardwareX paper [here](https://www.sciencedirect.com/science/article/pii/S2468067220300195).
 
+Mouy, X., Black, M., Cox, K., Qualley, J., Mireault, C., Dosso, S., and Juanes, F., 2020. “FishCam: A low-cost open source autonomous camera for aquatic research,” HardwareX 8, e00110. https://doi.org/10.1016/j.ohx.2020.e00110. 
+
 ## Authors
 Xavier Mouy (1,2), Morgan Black (3), Kieran Cox (3), Jessica Qualley (3), Callum Mireault (4), Stan Dosso (1), and Francis Juanes (3)
 
 1. School of Earth and Ocean Sciences, University of Victoria, 3800 Finnerty Road, Victoria, BC, V8P 5C2, Canada.
-2. JASCO Applied Sciences, 2305{4464 Markham Street, Victoria, BC, V8Z 7X8, Canada.
+2. JASCO Applied Sciences, 2305 4464 Markham Street, Victoria, BC, V8Z 7X8, Canada.
 3. Biology department, University of Victoria, 3800 Finnerty Road, Victoria, BC, V8P 5C2, Canada.
 4. Geography Department, Memorial University, P.O. Box 4200, St. John's, NL, A1C 5S7, Canada.
 
