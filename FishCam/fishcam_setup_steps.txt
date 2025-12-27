@@ -1,0 +1,60 @@
+username: fishcam
+hostname: fishcam0x (replace x by the fishcam number)
+
+--------- ALREADY DONE WHEN USING THE FISHCAM SD-CARD IMAGE ---------
+
+1- Turn off bluetooth
+
+2- install software:
+sudo apt update
+sudo apt upgrade
+sudo apt install python3
+sudo apt install cron
+sudo apt install git
+
+3- Dowload GitHub repo:
+cd /home/fishcam/Desktop/
+git clone https://github.com/xaviermouy/FishCam.git.
+
+4- Open control center:
+Interfaces > enable ssh
+Localization > set timezone to UTC
+System > Boot to CLI
+System > Change hostname to fishcam01
+System > splash screen off
+
+5- Setup cron job:
+crontab -e
+@ reboot sh/home/fishcam/Desktop/FishCam/script/camStartup.sh &
+Save the changes by pressing CTRL  + O, then press Enter to confirm.
+Exit Nano by pressing CTRL  + X
+Verify that the schedule has been saved: crontab -l
+
+--------- TO DO FOR EACH FISHCAM EVEN WHEN USING THE FISHCAM SD-CARD IMAGE ---------
+
+6- Install WittyPi (v4 mini):
+cd /home/fishcam/Desktop
+wget http://www.uugear.com/repo/WittyPi4/install.sh
+sudo sh install.sh
+
+7- Setup WittyPi:
+sudo sh /home/fishcam/Desktop/wittyPi/wittyPi.sh
+> synchronise network time
+> view/change other settings
+> default
+
+8- Change hostname 
+Open control center > System > Change hostname to fishcam0x
+
+9- Change FishCam ID
+Edit /home/fishcam/Desktop/FishCam/scripts/fishcam_config.yaml
+Change fishCam:id to "fishcam0x" (change x to fishcam number)
+
+10- Change Buzzer Sequence
+Edit /home/fishcam/Desktop/FishCam/scripts/fishcam_config.yaml
+Change buzzer:
+
+
+- Expand filesystem
+sudo raspi-config
+
