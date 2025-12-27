@@ -30,31 +30,47 @@ Save the changes by pressing CTRL  + O, then press Enter to confirm.
 Exit Nano by pressing CTRL  + X
 Verify that the schedule has been saved: crontab -l
 
+6- Mark fishcam number on SD card (with sharpie)
+
 --------- TO DO FOR EACH FISHCAM EVEN WHEN USING THE FISHCAM SD-CARD IMAGE ---------
 
-6- Install WittyPi (v4 mini):
+7- Install WittyPi (v4 mini):
 cd /home/fishcam/Desktop
 wget http://www.uugear.com/repo/WittyPi4/install.sh
 sudo sh install.sh
 
-7- Setup WittyPi:
+8- Setup WittyPi:
 sudo sh /home/fishcam/Desktop/wittyPi/wittyPi.sh
 > synchronise network time
 > view/change other settings
 > default
 
-8- Change hostname 
+9- Change hostname 
 Open control center > System > Change hostname to fishcam0x
 
-9- Change FishCam ID
+10- Change FishCam ID
 Edit /home/fishcam/Desktop/FishCam/scripts/fishcam_config.yaml
 Change fishCam:id to "fishcam0x" (change x to fishcam number)
 
-10- Change Buzzer Sequence
+11- Change Buzzer Sequence
 Edit /home/fishcam/Desktop/FishCam/scripts/fishcam_config.yaml
-Change buzzer:
+make sure fields in "auto" mode are correct
 
-
-- Expand filesystem
+12- Expand filesystem
 sudo raspi-config
 
+13- Adjust focus of lens
+rpicam-hello --timeout 0
+
+14- Adjust orientation of the camera
+rpicam-hello --timeout 0
+Adjust vflip and hflip in fishcam_config.yaml
+Add colored tape to chassis and bottle to indicate the "up" side
+
+15- Add label "fishcam0x" to chassis of fishcam
+
+16- Make sure coin battery is set on the board
+
+17- Close bottle
+
+18- Test that bootle is sealed properly using pump

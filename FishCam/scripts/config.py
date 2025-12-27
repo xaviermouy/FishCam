@@ -86,27 +86,26 @@ class FishCamConfig:
 
         return settings
 
+    def get_fishcam_settings(self):
+        """
+        Get fishcam settings as a dictionary
+
+        Returns:
+            dict: FishCam settings
+        """
+        return self.config.get('fishcam', {})
+
     def get_buzzer_settings(self):
         """
         Get buzzer settings as a dictionary
 
         Returns:
-            dict: Buzzer settings
+            dict: Buzzer settings (returns the full buzzer config structure)
         """
         buzzer = self.config.get('buzzer', {})
 
-        settings = {
-            'pin': buzzer.get('pin', 26),
-            'beep_duration_sec': buzzer.get('beep_duration_sec', 0.01),
-            'beep_gap_sec': buzzer.get('beep_gap_sec', 0.5),
-            'beep_number': buzzer.get('beep_number', 10),
-            'number_sequences': buzzer.get('number_sequences', 5),
-            'gap_between_sequences_sec': buzzer.get('gap_between_sequences_sec', 5),
-            'enabled': buzzer.get('enabled', True),
-            'iteration_period': buzzer.get('iteration_period', -1)
-        }
-
-        return settings
+        # Return the full buzzer configuration including mode-specific settings
+        return buzzer
 
     def get_paths(self):
         """
@@ -176,6 +175,10 @@ def get_video_settings():
 def get_buzzer_settings():
     """Get buzzer settings from configuration"""
     return get_config().get_buzzer_settings()
+
+def get_fishcam_settings():
+    """Get fishcam settings from configuration"""
+    return get_config().get_fishcam_settings()
 
 def get_fishcam_id():
     """Get FishCam ID from configuration"""

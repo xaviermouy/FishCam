@@ -36,14 +36,27 @@ camera:
 
 # Buzzer Settings
 buzzer:
-  pin: 26  # GPIO pin number for buzzer (BCM numbering)
-  beep_duration_sec: 0.05  # Duration of each beep in seconds
-  beep_gap_sec: 0.1  # Gap between beeps in seconds
-  beep_number: 2  # Number of beeps per sequence
-  gap_between_sequences_sec: 5  # Gap between sequences in seconds
-  number_sequences: 3  # Number of beep sequences to play
   enabled: true  # Enable/disable buzzer functionality
+  pin: 26  # GPIO pin number for buzzer (BCM numbering)
+  mode: 'auto'  # 'manual' or 'auto' mode
   iteration_period: -1  # Period for buzzer iterations (-1 = disabled)
+
+  # Common settings
+  beep_duration_sec: 0.1  # Duration of each beep in seconds
+  beep_gap_sec: 0.1  # Gap between beeps in seconds
+  number_sequences: 5  # Number of beep sequences to play
+
+  # Manual mode settings - used when mode is 'manual'
+  manual:
+    beep_number: 2  # Number of beeps per sequence
+    gap_between_sequences_sec: 5  # Gap between sequences in seconds
+    initial_delay_sec: 0  # Initial delay before starting (0 = no delay, use for sequential beeping)
+
+  # Auto mode settings - used when mode is 'auto'
+  auto:
+    total_fishcams: 6  # Total number of fishcams being deployed
+    base_beeps: 10  # Base number of beeps (fishcam_number will be added to this)
+    safety_buffer_sec: 2  # Safety buffer in seconds added to initial delays (accounts for clock drift/startup delays)
 
 # File Paths and Directories
 paths:

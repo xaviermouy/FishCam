@@ -234,8 +234,9 @@ def main():
     # Start logs
     if os.path.isdir(logDir) == False:
         os.mkdir(logDir)
+    log_filename = os.path.join(logDir, time.strftime('%Y%m%dT%H%M%S') + '.log')
     logging.basicConfig(
-        filename=os.path.join(logDir, time.strftime('%Y%m%dT%H%M%S') + '.log'),
+        filename=log_filename,
         level=logging.DEBUG,
         format='%(asctime)s %(levelname)s %(name)s %(message)s'
     )
@@ -265,7 +266,7 @@ def main():
 
                 if camOK == True:  # rings the buzzer only if camera is confirmed to be working
                     logging.info('Buzzer turned ON')
-                    pid = subprocess.Popen([sys.executable, 'runBuzzer.py'])
+                    pid = subprocess.Popen([sys.executable, 'runBuzzer.py', log_filename])
 
             # Capture video
             captureVideo_loop(outDir, iterFileName, iterations=0, flagname=FishCamID)  # default settings
