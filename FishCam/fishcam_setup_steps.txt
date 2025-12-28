@@ -25,7 +25,7 @@ System > splash screen off
 
 5- Setup cron job:
 crontab -e
-@ reboot sh/home/fishcam/Desktop/FishCam/script/camStartup.sh &
+@reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/camStartup.sh &
 Save the changes by pressing CTRL  + O, then press Enter to confirm.
 Exit Nano by pressing CTRL  + X
 Verify that the schedule has been saved: crontab -l
@@ -49,11 +49,11 @@ sudo sh /home/fishcam/Desktop/wittyPi/wittyPi.sh
 Open control center > System > Change hostname to fishcam0x
 
 10- Change FishCam ID
-Edit /home/fishcam/Desktop/FishCam/scripts/fishcam_config.yaml
+Edit /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
 Change fishCam:id to "fishcam0x" (change x to fishcam number)
 
 11- Change Buzzer Sequence
-Edit /home/fishcam/Desktop/FishCam/scripts/fishcam_config.yaml
+Edit /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
 make sure fields in "auto" mode are correct
 
 12- Expand filesystem
