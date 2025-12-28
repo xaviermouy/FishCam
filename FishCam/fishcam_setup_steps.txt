@@ -26,9 +26,9 @@ System > splash screen off
 5- Setup cron job:
 crontab -e
 @reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/camStartup.sh &
-Save the changes by pressing CTRL  + O, then press Enter to confirm.
-Exit Nano by pressing CTRL  + X
-Verify that the schedule has been saved: crontab -l
+Save the changes by pressing CTRL+O, then press Enter to confirm.
+Exit Nano by pressing CTRL+X
+Verify that the schedule has been saved: sudo crontab -l
 
 6- Mark fishcam number on SD card (with sharpie)
 
@@ -40,10 +40,10 @@ wget http://www.uugear.com/repo/WittyPi4/install.sh
 sudo sh install.sh
 
 8- Setup WittyPi:
-sudo sh /home/fishcam/Desktop/wittyPi/wittyPi.sh
+sudo sh /home/fishcam/Desktop/wittypi/wittyPi.sh
 > synchronise network time
 > view/change other settings
-> default
+> default state when powered: ON
 
 9- Change hostname 
 Open control center > System > Change hostname to fishcam0x

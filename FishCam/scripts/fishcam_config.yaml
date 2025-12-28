@@ -7,8 +7,8 @@ fishcam:
 
 # Video Capture Settings
 video:
-  duration: 300  # Duration of each video file in seconds
-  resolution: [1600,1200]  # Video resolution [width, height] in pixels
+  duration: 900  # Duration of each video file in seconds
+  resolution: [1600,1200] #[2028, 1520] #[1600,1200]  # Video resolution [width, height] in pixels
   frameRate: 10  # Frame rate in frames per second
   quality: 'medium'  # Encoding quality: 'very_low', 'low', 'medium', 'high', 'very_high'
   format: 'h264'  # Video format: 'h264' or 'mjpeg'
