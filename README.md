@@ -226,3 +226,129 @@ For deploying multiple fishcams, use `mode: 'auto'`:
 2. Change only the `fishcam.id` on each unit: `fishcam01`, `fishcam02`, `fishcam03`, etc.
 
 3. All fishcams will automatically beep sequentially with unique patterns (11, 12, 13... beeps).
+
+---
+
+## Setting Up a New FishCam System
+
+**Default credentials:**
+- Username: `fishcam`
+- Hostname: `fishcam0x` (replace x with the fishcam number)
+
+### One-Time Setup (Skip if using FishCam SD-card image)
+
+These steps are already done when using the FishCam SD-card image:
+
+- [ ] **Turn off Bluetooth** (to save power)
+
+- [ ] **Install required software:**
+  ```bash
+  sudo apt update
+  sudo apt upgrade
+  sudo apt install python3
+  sudo apt install cron
+  sudo apt install git
+  ```
+
+- [ ] **Download GitHub repository:**
+  ```bash
+  cd /home/fishcam/Desktop/
+  git clone https://github.com/xaviermouy/FishCam.git
+  ```
+
+- [ ] **Configure system settings:**
+  - Open control center
+  - Interfaces → Enable SSH
+  - Localization → Set timezone to UTC
+  - System → Boot to CLI
+  - System → Change hostname to `fishcam01`
+  - System → Splash screen off
+
+- [ ] **Setup cron job for auto-start:**
+  ```bash
+  crontab -e
+  # Add this line:
+  @reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/camStartup.sh &
+  ```
+  - Save: `Ctrl+O`, then `Enter`
+  - Exit: `Ctrl+X`
+  - Verify: `sudo crontab -l`
+
+- [ ] **Mark fishcam number on SD card** (with permanent marker)
+
+---
+
+### Per-FishCam Setup (Required for each unit)
+
+Complete these steps for **every FishCam**, even when using the FishCam SD-card image:
+
+- [ ] **Install WittyPi (v4 mini):**
+  ```bash
+  cd /home/fishcam/Desktop
+  wget http://www.uugear.com/repo/WittyPi4/install.sh
+  sudo sh install.sh
+  ```
+
+- [ ] **Configure WittyPi:**
+  ```bash
+  sudo sh /home/fishcam/Desktop/wittypi/wittyPi.sh
+  ```
+  - Synchronize network time
+  - View/change other settings → Default state when powered: **ON**
+
+- [ ] **Change hostname:**
+  - Open control center → System → Change hostname to `fishcam0x` (replace x with fishcam number)
+
+- [ ] **Update FishCam ID in configuration:**
+  ```bash
+  nano /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
+  ```
+  - Change `fishcam: id:` to `"fishcam0x"` (replace x with fishcam number)
+
+- [ ] **Verify buzzer configuration:**
+  - Edit `fishcam_config.yaml`
+  - Ensure `mode: 'auto'` and fields in `auto:` section are correct
+  - Verify `total_fishcams` matches your deployment
+
+- [ ] **Expand filesystem:**
+  ```bash
+  sudo raspi-config
+  # Select: Advanced Options → Expand Filesystem
+  ```
+
+- [ ] **Adjust camera lens focus:**
+  ```bash
+  rpicam-hello --timeout 0
+  ```
+  - Physically adjust lens while viewing preview
+  - Press `Ctrl+C` to exit when done
+
+- [ ] **Adjust camera orientation:**
+  ```bash
+  rpicam-hello --timeout 0
+  ```
+  - Test camera orientation
+  - Adjust `vflip` and `hflip` in `fishcam_config.yaml` if needed
+  - Add colored tape to chassis and bottle to indicate "up" side
+
+- [ ] **Label the chassis** with "fishcam0x"
+
+- [ ] **Install coin battery** on the board (for real-time clock)
+
+- [ ] **Close the bottle/housing**
+
+- [ ] **Pressure test:** Test that bottle is sealed properly using pump
+
+---
+
+### Pre-Deployment Checklist
+
+Before deploying:
+
+- [ ] Test video recording: `python captureVideo.py` (stop with `Ctrl+C` after one video)
+- [ ] Test buzzer: `python runBuzzer.py`
+- [ ] Visualize buzzer sequences: `python visualize_buzzer_sequences.py`
+- [ ] Check logs in `../logs/` for any errors
+- [ ] Verify SD card has sufficient space
+- [ ] Verify battery is fully charged
+- [ ] External label on housing matches `fishcam.id` in config
