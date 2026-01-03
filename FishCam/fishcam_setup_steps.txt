@@ -16,6 +16,8 @@ sudo apt install git
 cd /home/fishcam/Desktop/
 git clone https://github.com/xaviermouy/FishCam.git.
 
+chmod +x /home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCam.sh
+
 4- Open control center:
 Interfaces > enable ssh
 Localization > set timezone to UTC
@@ -33,6 +35,15 @@ Verify that the schedule has been saved: sudo crontab -l
 6- Mark fishcam number on SD card (with sharpie)
 
 --------- TO DO FOR EACH FISHCAM EVEN WHEN USING THE FISHCAM SD-CARD IMAGE ---------
+
+6- Update GitHub repo:
+Manual
+	cd /home/fishcam/Desktop/FishCam
+	git fetch origin
+	git reset --hard origin/main
+	git clean -fd
+automated:
+	./home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCam.sh
 
 7- Install WittyPi (v4 mini):
 cd /home/fishcam/Desktop

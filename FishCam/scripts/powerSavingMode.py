@@ -40,7 +40,10 @@ STATE_FILE = '/tmp/fishcam_power_mode.state'
 
 class PowerSavingController:
     def __init__(self, reed_pin, led_pin, check_interval, buzzer_pin=None,
-                 beep_in_config_mode=False, beep_interval=10.0, beep_duration=0.1):
+                 beep_in_config_mode=False, beep_interval=10.0, beep_duration=0.1,
+                 disable_wifi=True, disable_bluetooth=True, disable_hdmi=True,
+                 disable_usb=False, throttle_cpu=True, stop_services=True,
+                 disable_led_triggers=True):
         self.reed_pin = reed_pin
         self.led_pin = led_pin
         self.check_interval = check_interval
@@ -48,6 +51,16 @@ class PowerSavingController:
         self.beep_in_config_mode = beep_in_config_mode
         self.beep_interval = beep_interval
         self.beep_duration = beep_duration
+
+        # Component-specific power saving controls
+        self.disable_wifi = disable_wifi
+        self.disable_bluetooth = disable_bluetooth
+        self.disable_hdmi = disable_hdmi
+        self.disable_usb = disable_usb
+        self.throttle_cpu = throttle_cpu
+        self.stop_services = stop_services
+        self.disable_led_triggers = disable_led_triggers
+
         self.gpio_handle = None
         self.current_mode = None  # 'config' or 'power_saving'
         self.last_beep_time = 0  # Track when last beep occurred
@@ -142,47 +155,67 @@ class PowerSavingController:
         # Turn off LED
         self.set_led(False)
 
-        # Disable WiFi
-        logging.info("Disabling WiFi...")
-        self.run_command("sudo rfkill block wifi")
+        # Disable WiFi (if enabled in config)
+        if self.disable_wifi:
+            logging.info("Disabling WiFi...")
+            self.run_command("sudo rfkill block wifi")
+        else:
+            logging.info("WiFi disable skipped (disabled in config)")
 
-        # Disable Bluetooth
-        logging.info("Disabling Bluetooth...")
-        self.run_command("sudo rfkill block bluetooth")
+        # Disable Bluetooth (if enabled in config)
+        if self.disable_bluetooth:
+            logging.info("Disabling Bluetooth...")
+            self.run_command("sudo rfkill block bluetooth")
+        else:
+            logging.info("Bluetooth disable skipped (disabled in config)")
 
-        # Disable HDMI output
-        logging.info("Disabling HDMI...")
-        self.run_command("sudo tvservice -o")
+        # Disable HDMI output (if enabled in config)
+        if self.disable_hdmi:
+            logging.info("Disabling HDMI...")
+            self.run_command("sudo tvservice -o")
+        else:
+            logging.info("HDMI disable skipped (disabled in config)")
 
-        # Disable USB (can save significant power, but be careful with camera)
-        # This enables aggressive USB autosuspend - uncomment if camera doesn't use USB interface
-        logging.info("Disabling USB...")
-        self.run_command("echo auto | sudo tee /sys/bus/usb/devices/usb1/power/control")
+        # Disable USB - enable aggressive USB autosuspend (if enabled in config)
+        if self.disable_usb:
+            logging.info("Disabling USB...")
+            self.run_command("echo auto | sudo tee /sys/bus/usb/devices/usb1/power/control")
+        else:
+            logging.info("USB disable skipped (disabled in config)")
 
-        # Set CPU governor to powersave
-        logging.info("Setting CPU to powersave mode...")
-        for cpu in range(4):  # Pi Zero 2W has 4 cores
-            self.run_command(f"echo powersave | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
+        # Throttle CPU (if enabled in config)
+        if self.throttle_cpu:
+            # Set CPU governor to powersave
+            logging.info("Setting CPU to powersave mode...")
+            for cpu in range(4):  # Pi Zero 2W has 4 cores
+                self.run_command(f"echo powersave | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
 
-        # Cap CPU frequency to reduce power
-        # Pi Zero 2W: 1000 MHz max, cap at 600 MHz for power saving
-        logging.info("Capping CPU frequency to 600 MHz...")
-        for cpu in range(4):
-            self.run_command(f"echo 600000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+            # Cap CPU frequency to reduce power (1000 MHz -> 600 MHz)
+            logging.info("Capping CPU frequency to 600 MHz...")
+            for cpu in range(4):
+                self.run_command(f"echo 600000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+        else:
+            logging.info("CPU throttling skipped (disabled in config)")
 
-        # Stop non-essential services
-        logging.info("Stopping non-essential services...")
-        services_to_stop = [
-            'avahi-daemon',      # mDNS/DNS-SD
-            'triggerhappy',      # Hotkey daemon
-            'bluetooth',         # Bluetooth service
-        ]
-        for service in services_to_stop:
-            self.run_command(f"sudo systemctl stop {service}")
+        # Stop non-essential services (if enabled in config)
+        if self.stop_services:
+            logging.info("Stopping non-essential services...")
+            services_to_stop = [
+                'avahi-daemon',      # mDNS/DNS-SD
+                'triggerhappy',      # Hotkey daemon
+                'bluetooth',         # Bluetooth service
+            ]
+            for service in services_to_stop:
+                self.run_command(f"sudo systemctl stop {service}")
+        else:
+            logging.info("Service stopping skipped (disabled in config)")
 
-        # Disable LED triggers to save power
-        self.run_command("echo none | sudo tee /sys/class/leds/led0/trigger")  # Activity LED
-        self.run_command("echo none | sudo tee /sys/class/leds/led1/trigger")  # Power LED (if controllable)
+        # Disable LED triggers to save power (if enabled in config)
+        if self.disable_led_triggers:
+            self.run_command("echo none | sudo tee /sys/class/leds/led0/trigger")  # Activity LED
+            self.run_command("echo none | sudo tee /sys/class/leds/led1/trigger")  # Power LED (if controllable)
+        else:
+            logging.info("LED trigger disable skipped (disabled in config)")
 
         self.current_mode = 'power_saving'
         self.save_state('power_saving')
@@ -198,47 +231,68 @@ class PowerSavingController:
         # Turn on LED
         self.set_led(True)
 
-        # Enable WiFi
-        logging.info("Enabling WiFi...")
-        self.run_command("sudo rfkill unblock wifi")
+        # Enable WiFi (if it was disabled in power saving mode)
+        if self.disable_wifi:
+            logging.info("Enabling WiFi...")
+            self.run_command("sudo rfkill unblock wifi")
+        else:
+            logging.info("WiFi enable skipped (was not disabled)")
 
-        # Enable Bluetooth
-        logging.info("Enabling Bluetooth...")
-        self.run_command("sudo rfkill unblock bluetooth")
+        # Enable Bluetooth (if it was disabled in power saving mode)
+        if self.disable_bluetooth:
+            logging.info("Enabling Bluetooth...")
+            self.run_command("sudo rfkill unblock bluetooth")
+        else:
+            logging.info("Bluetooth enable skipped (was not disabled)")
 
-        # Enable HDMI output
-        logging.info("Enabling HDMI...")
-        self.run_command("sudo tvservice -p")
-        # Force HDMI mode
-        self.run_command("sudo fbset -depth 8 && sudo fbset -depth 16")
+        # Enable HDMI output (if it was disabled in power saving mode)
+        if self.disable_hdmi:
+            logging.info("Enabling HDMI...")
+            self.run_command("sudo tvservice -p")
+            # Force HDMI mode
+            self.run_command("sudo fbset -depth 8 && sudo fbset -depth 16")
+        else:
+            logging.info("HDMI enable skipped (was not disabled)")
 
-        # Re-enable USB (disable autosuspend for normal operation)
-        # This matches the USB disable in power saving mode
-        logging.info("Enabling USB...")
-        self.run_command("echo on | sudo tee /sys/bus/usb/devices/usb1/power/control")
+        # Re-enable USB (if it was disabled in power saving mode)
+        if self.disable_usb:
+            logging.info("Enabling USB...")
+            self.run_command("echo on | sudo tee /sys/bus/usb/devices/usb1/power/control")
+        else:
+            logging.info("USB enable skipped (was not disabled)")
 
-        # Set CPU governor to ondemand (balanced performance)
-        logging.info("Setting CPU to ondemand mode...")
-        for cpu in range(4):
-            self.run_command(f"echo ondemand | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
+        # Restore CPU performance (if it was throttled in power saving mode)
+        if self.throttle_cpu:
+            # Set CPU governor to ondemand (balanced performance)
+            logging.info("Setting CPU to ondemand mode...")
+            for cpu in range(4):
+                self.run_command(f"echo ondemand | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
 
-        # Restore max CPU frequency
-        logging.info("Restoring CPU frequency to 1000 MHz...")
-        for cpu in range(4):
-            self.run_command(f"echo 1000000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+            # Restore max CPU frequency
+            logging.info("Restoring CPU frequency to 1000 MHz...")
+            for cpu in range(4):
+                self.run_command(f"echo 1000000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+        else:
+            logging.info("CPU restore skipped (was not throttled)")
 
-        # Start services
-        logging.info("Starting services...")
-        services_to_start = [
-            'avahi-daemon',
-            'triggerhappy',
-            'bluetooth',
-        ]
-        for service in services_to_start:
-            self.run_command(f"sudo systemctl start {service}")
+        # Start services (if they were stopped in power saving mode)
+        if self.stop_services:
+            logging.info("Starting services...")
+            services_to_start = [
+                'avahi-daemon',
+                'triggerhappy',
+                'bluetooth',
+            ]
+            for service in services_to_start:
+                self.run_command(f"sudo systemctl start {service}")
+        else:
+            logging.info("Service starting skipped (were not stopped)")
 
-        # Restore LED triggers
-        self.run_command("echo mmc0 | sudo tee /sys/class/leds/led0/trigger")
+        # Restore LED triggers (if they were disabled in power saving mode)
+        if self.disable_led_triggers:
+            self.run_command("echo mmc0 | sudo tee /sys/class/leds/led0/trigger")
+        else:
+            logging.info("LED trigger restore skipped (were not disabled)")
 
         self.current_mode = 'config'
         self.save_state('config')
@@ -387,6 +441,16 @@ def main():
     else:
         logging.info("Config mode beeping DISABLED")
 
+    # Log component-specific power saving settings
+    logging.info("Power saving components:")
+    logging.info(f"  - WiFi disable: {power_saving_config['disable_wifi']}")
+    logging.info(f"  - Bluetooth disable: {power_saving_config['disable_bluetooth']}")
+    logging.info(f"  - HDMI disable: {power_saving_config['disable_hdmi']}")
+    logging.info(f"  - USB autosuspend: {power_saving_config['disable_usb']}")
+    logging.info(f"  - CPU throttling: {power_saving_config['throttle_cpu']}")
+    logging.info(f"  - Stop services: {power_saving_config['stop_services']}")
+    logging.info(f"  - Disable LED triggers: {power_saving_config['disable_led_triggers']}")
+
     # Check if running as root (required for some operations)
     if os.geteuid() != 0:
         logging.warning("Not running as root - some power saving features may not work")
@@ -399,7 +463,15 @@ def main():
         buzzer_pin=buzzer_pin,
         beep_in_config_mode=power_saving_config['beep_in_config_mode'],
         beep_interval=power_saving_config['beep_interval'],
-        beep_duration=power_saving_config['beep_duration']
+        beep_duration=power_saving_config['beep_duration'],
+        # Component-specific controls
+        disable_wifi=power_saving_config['disable_wifi'],
+        disable_bluetooth=power_saving_config['disable_bluetooth'],
+        disable_hdmi=power_saving_config['disable_hdmi'],
+        disable_usb=power_saving_config['disable_usb'],
+        throttle_cpu=power_saving_config['throttle_cpu'],
+        stop_services=power_saving_config['stop_services'],
+        disable_led_triggers=power_saving_config['disable_led_triggers']
     )
     controller.run()
 

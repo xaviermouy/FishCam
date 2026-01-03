@@ -127,9 +127,10 @@ class FishCamConfig:
         Get power saving mode settings
 
         Returns:
-            dict: Power saving settings
+            dict: Power saving settings including component-specific controls
         """
         power_saving = self.config.get('power_saving', {})
+        components = power_saving.get('components', {})
 
         return {
             'enabled': power_saving.get('enabled', False),
@@ -138,7 +139,15 @@ class FishCamConfig:
             'check_interval': power_saving.get('check_interval', 2.0),
             'beep_in_config_mode': power_saving.get('beep_in_config_mode', False),
             'beep_interval': power_saving.get('beep_interval', 10.0),
-            'beep_duration': power_saving.get('beep_duration', 0.1)
+            'beep_duration': power_saving.get('beep_duration', 0.1),
+            # Component-specific controls (default all to True for backward compatibility)
+            'disable_wifi': components.get('disable_wifi', True),
+            'disable_bluetooth': components.get('disable_bluetooth', True),
+            'disable_hdmi': components.get('disable_hdmi', True),
+            'disable_usb': components.get('disable_usb', False),  # Default False (safe)
+            'throttle_cpu': components.get('throttle_cpu', True),
+            'stop_services': components.get('stop_services', True),
+            'disable_led_triggers': components.get('disable_led_triggers', True)
         }
 
     def get(self, *keys, default=None):

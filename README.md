@@ -162,7 +162,19 @@ power_saving:
   beep_in_config_mode: false
   beep_interval: 10.0
   beep_duration: 0.1
+
+  # Component-specific power saving controls
+  components:
+    disable_wifi: true
+    disable_bluetooth: true
+    disable_hdmi: true
+    disable_usb: true
+    throttle_cpu: true
+    stop_services: true
+    disable_led_triggers: true
 ```
+
+#### Main Settings
 
 - **`enabled`**: Enable/disable power saving mode (true/false). Requires reed switch hardware. Set to false for FishCams without reed switch.
 - **`reed_switch_pin`**: GPIO pin number for reed switch (BCM numbering). Default: 18 (Pin 12, right side of Pi).
@@ -176,6 +188,27 @@ power_saving:
 - **`beep_duration`**: Duration of each beep in seconds. Default: 0.1 seconds.
 
 **Note**: Buzzer beep feature requires buzzer hardware to be enabled in `buzzer` settings. The buzzer GPIO pin is taken from the `buzzer.pin` setting.
+
+#### Component-Specific Power Saving Controls
+
+Each power saving feature can be individually enabled or disabled. Set to `true` to enable power saving for that component, `false` to keep it always on.
+
+- **`disable_wifi`**: Disable WiFi in power saving mode. Saves ~40-50 mA. Default: true.
+- **`disable_bluetooth`**: Disable Bluetooth in power saving mode. Saves ~10-15 mA. Default: true.
+- **`disable_hdmi`**: Disable HDMI output in power saving mode. Saves ~20-30 mA. Default: true.
+- **`disable_usb`**: Enable USB autosuspend in power saving mode. Saves ~20-30 mA. Default: true (safe for most Pi camera modules).
+- **`throttle_cpu`**: Throttle CPU frequency (1000 MHz → 600 MHz) in power saving mode. Saves ~50-100 mA. Default: true.
+- **`stop_services`**: Stop non-essential services in power saving mode. Saves ~10-20 mA. Default: true.
+- **`disable_led_triggers`**: Disable activity LED triggers in power saving mode. Minimal savings. Default: true.
+
+**Example - WiFi always on (for SSH access during deployment):**
+```yaml
+components:
+  disable_wifi: false  # Keep WiFi on even in power saving mode
+  disable_bluetooth: true
+  disable_hdmi: true
+  # ... other settings
+```
 
 **See [POWER_SAVING_SETUP.md](POWER_SAVING_SETUP.md) for complete hardware setup and usage instructions.**
 
