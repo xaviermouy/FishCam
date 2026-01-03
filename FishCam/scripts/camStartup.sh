@@ -8,6 +8,9 @@ sleep 10
 # Change to scripts directory
 cd /home/fishcam/Desktop/FishCam/FishCam/scripts/
 
+# Create logs directory if it doesn't exist
+mkdir -p ../logs
+
 # Start power saving mode controller in background
 echo "Starting power saving controller..."
 sudo python3 ./powerSavingMode.py >> ../logs/power_saving_startup.log 2>&1 &
