@@ -12,6 +12,7 @@ import config
 
 # Global list to store frame metadata
 frame_metadata = []
+frame_counter = 0
 
 def initVideoSettings():
     """Load video settings from configuration file"""
@@ -19,18 +20,20 @@ def initVideoSettings():
 
 def capture_frame_metadata(request):
     """Callback to capture metadata for each encoded frame"""
+    global frame_counter
     metadata = request.get_metadata()
 
     frame_info = {
-        'frame_sequence': metadata.get('FrameSequence', -1),
+        'frame_sequence': frame_counter,
         'sensor_timestamp_us': metadata.get('SensorTimestamp', -1),
         'system_time': time.time(),
-        'datetime': datetime.now().astimezone().strftime('%Y-%m-%dT%H:%M:%S.%f%z'),
+        'datetime': datetime.now().astimezone().strftime('%Y%m%dT%H%M%S.%f%z'),
         'exposure_time': metadata.get('ExposureTime', -1),
         'analogue_gain': metadata.get('AnalogueGain', -1)
     }
 
     frame_metadata.append(frame_info)
+    frame_counter += 1
 
 def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
     # Open iterator file for output filenames
@@ -137,8 +140,9 @@ def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
     time.sleep(2)  # Allow camera to warm up and adjust settings
 
     # Clear frame metadata for this video
-    global frame_metadata
+    global frame_metadata, frame_counter
     frame_metadata.clear()
+    frame_counter = 0
 
     # Register callback to capture frame metadata
     camera.post_callback = capture_frame_metadata
@@ -155,6 +159,10 @@ def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
     # Save frame metadata to JSON file
     metadata_filename = videofilename.replace('.' + videoSettings['format'], '_metadata.json')
 
+    # Calculate statistics
+    expected_frames = videoSettings['duration'] * videoSettings['frameRate']
+    actual_frames = len(frame_metadata)
+
     try:
         with open(metadata_filename, 'w') as f:
             json.dump({
@@ -162,24 +170,18 @@ def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
                 'start_time': video_start_time,
                 'duration_sec': videoSettings['duration'],
                 'expected_frame_rate': videoSettings['frameRate'],
+                'expected_frames': expected_frames,
+                'actual_frames': actual_frames,
                 'resolution': videoSettings['resolution'],
-                'total_frames': len(frame_metadata),
                 'frames': frame_metadata
             }, f, indent=2)
 
-        # Calculate and log statistics
-        expected_frames = videoSettings['duration'] * videoSettings['frameRate']
-        actual_frames = len(frame_metadata)
-
-        # Check for dropped frames by looking for gaps in FrameSequence
-        sequences = [f['frame_sequence'] for f in frame_metadata if f['frame_sequence'] != -1]
-        if len(sequences) > 1:
-            gaps = sum(1 for i in range(1, len(sequences)) if sequences[i] - sequences[i-1] > 1)
-        else:
-            gaps = 0
+        # Note: frame_sequence is a manual counter and won't have gaps
+        # Dropped frames are detected by comparing expected vs actual frame counts
+        # or by analyzing gaps in sensor_timestamp_us
 
         logging.info(f"Frame metadata saved: {metadata_filename}")
-        logging.info(f"Frame stats: Expected={expected_frames}, Actual={actual_frames}, Dropped={expected_frames - actual_frames}, Sequence_gaps={gaps}")
+        logging.info(f"Frame stats: Expected={expected_frames}, Actual={actual_frames}, Dropped={expected_frames - actual_frames}")
 
         if actual_frames < expected_frames * 0.95:  # More than 5% frames dropped
             logging.warning(f"Significant frame loss: {expected_frames - actual_frames} frames dropped ({100 * (expected_frames - actual_frames) / expected_frames:.1f}%)")
