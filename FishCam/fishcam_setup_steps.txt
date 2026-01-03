@@ -60,17 +60,19 @@ make sure fields in "auto" mode are correct
 sudo raspi-config
 
 13- Adjust focus of lens
-rpicam-hello --timeout 0
+rpicam-hello --timeout 0 --width 1920 --height 1080 --framerate 10
 
 14- Adjust orientation of the camera
-rpicam-hello --timeout 0
+rpicam-hello --timeout 0 --width 1920 --height 1080 --framerate 10
 Adjust vflip and hflip in fishcam_config.yaml
 Add colored tape to chassis and bottle to indicate the "up" side
 
-15- Add label "fishcam0x" to chassis of fishcam
+15- Configure and test power saving mode in /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
 
-16- Make sure coin battery is set on the board
+16- Add label "fishcam0x" to chassis of fishcam
 
-17- Close bottle
+17- Make sure coin battery is set on the board
 
-18- Test that bootle is sealed properly using pump
+18- Close bottle
+
+19- Test that bootle is sealed properly using pump
