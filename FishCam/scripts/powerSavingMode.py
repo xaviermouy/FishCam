@@ -36,18 +36,13 @@ import config
 
 
 class PowerSavingController:
-    def __init__(self, reed_pin, led_pin, check_interval, buzzer_pin=None,
-                 beep_in_config_mode=False, beep_interval=10.0, beep_duration=0.1,
+    def __init__(self, reed_pin, led_pin, check_interval,
                  disable_wifi=True, disable_bluetooth=True, disable_hdmi=True,
                  disable_usb=False, throttle_cpu=True, stop_services=True,
                  disable_led_triggers=True):
         self.reed_pin = reed_pin
         self.led_pin = led_pin
         self.check_interval = check_interval
-        self.buzzer_pin = buzzer_pin
-        self.beep_in_config_mode = beep_in_config_mode
-        self.beep_interval = beep_interval
-        self.beep_duration = beep_duration
 
         # Component-specific power saving controls
         self.disable_wifi = disable_wifi
@@ -60,7 +55,6 @@ class PowerSavingController:
 
         self.gpio_handle = None
         self.current_mode = None  # 'config' or 'power_saving'
-        self.last_beep_time = 0  # Track when last beep occurred
 
         # Initialize GPIO
         try:
@@ -74,13 +68,7 @@ class PowerSavingController:
             # Configure LED as output
             lgpio.gpio_claim_output(self.gpio_handle, self.led_pin)
 
-            # Configure buzzer as output if provided
-            if self.buzzer_pin is not None:
-                lgpio.gpio_claim_output(self.gpio_handle, self.buzzer_pin)
-                lgpio.gpio_write(self.gpio_handle, self.buzzer_pin, 0)  # Ensure buzzer is off
-                logging.info(f"GPIO initialized: Reed switch on GPIO{self.reed_pin}, LED on GPIO{self.led_pin}, Buzzer on GPIO{self.buzzer_pin}")
-            else:
-                logging.info(f"GPIO initialized: Reed switch on GPIO{self.reed_pin}, LED on GPIO{self.led_pin}")
+            logging.info(f"GPIO initialized: Reed switch on GPIO{self.reed_pin}, LED on GPIO{self.led_pin}")
         except Exception as e:
             logging.error(f"Failed to initialize GPIO: {e}")
             raise
@@ -104,26 +92,6 @@ class PowerSavingController:
             lgpio.gpio_write(self.gpio_handle, self.led_pin, 1 if state else 0)
         except Exception as e:
             logging.error(f"Failed to set LED: {e}")
-
-    def beep(self, duration=None):
-        """
-        Sound buzzer for a short beep
-
-        Args:
-            duration: Beep duration in seconds (uses self.beep_duration if not specified)
-        """
-        if self.buzzer_pin is None:
-            return  # No buzzer configured
-
-        if duration is None:
-            duration = self.beep_duration
-
-        try:
-            lgpio.gpio_write(self.gpio_handle, self.buzzer_pin, 1)  # Turn on
-            time.sleep(duration)
-            lgpio.gpio_write(self.gpio_handle, self.buzzer_pin, 0)  # Turn off
-        except Exception as e:
-            logging.error(f"Failed to beep buzzer: {e}")
 
     def run_command(self, command, check=False):
         """Execute shell command with error handling"""
@@ -316,23 +284,11 @@ class PowerSavingController:
                     if self.current_mode != 'config':
                         logging.info("Magnet detected - switching to config mode")
                         self.enter_config_mode()
-                        # Reset beep timer when entering config mode
-                        self.last_beep_time = time.time()
                 else:
                     # No magnet - enter power saving mode
                     if self.current_mode != 'power_saving':
                         logging.info("Magnet removed - switching to power saving mode")
                         self.enter_power_saving_mode()
-
-                # Periodic beep when in config mode (if enabled)
-                if self.current_mode == 'config' and self.beep_in_config_mode:
-                    current_time = time.time()
-                    time_since_last_beep = current_time - self.last_beep_time
-
-                    if time_since_last_beep >= self.beep_interval:
-                        self.beep()
-                        self.last_beep_time = current_time
-                        logging.debug(f"Config mode beep (interval: {self.beep_interval}s)")
 
                 time.sleep(self.check_interval)
 
@@ -349,10 +305,6 @@ class PowerSavingController:
             try:
                 lgpio.gpio_free(self.gpio_handle, self.reed_pin)
                 lgpio.gpio_free(self.gpio_handle, self.led_pin)
-                if self.buzzer_pin is not None:
-                    # Ensure buzzer is off before cleanup
-                    lgpio.gpio_write(self.gpio_handle, self.buzzer_pin, 0)
-                    lgpio.gpio_free(self.gpio_handle, self.buzzer_pin)
                 lgpio.gpiochip_close(self.gpio_handle)
                 logging.info("GPIO cleaned up")
             except Exception as e:
@@ -381,7 +333,6 @@ def main():
     # Load power saving configuration
     try:
         power_saving_config = config.get_power_saving_settings()
-        buzzer_config = config.get_buzzer_settings()
     except Exception as e:
         logging.error(f"Failed to load configuration: {e}")
         sys.exit(1)
@@ -397,22 +348,6 @@ def main():
     logging.info(f"Reed switch on GPIO {power_saving_config['reed_switch_pin']}")
     logging.info(f"Status LED on GPIO {power_saving_config['led_pin']}")
     logging.info(f"Check interval: {power_saving_config['check_interval']}s")
-
-    # Get buzzer pin from buzzer config (if buzzer is enabled)
-    buzzer_pin = None
-    if buzzer_config.get('enabled', False):
-        buzzer_pin = buzzer_config.get('pin', None)
-        if buzzer_pin is not None:
-            logging.info(f"Buzzer on GPIO {buzzer_pin}")
-
-    # Log beep settings if enabled
-    if power_saving_config['beep_in_config_mode']:
-        if buzzer_pin is not None:
-            logging.info(f"Config mode beeping ENABLED (interval: {power_saving_config['beep_interval']}s, duration: {power_saving_config['beep_duration']}s)")
-        else:
-            logging.warning("Config mode beeping ENABLED but buzzer not configured - beeping disabled")
-    else:
-        logging.info("Config mode beeping DISABLED")
 
     # Log component-specific power saving settings
     logging.info("Power saving components:")
@@ -433,10 +368,6 @@ def main():
         reed_pin=power_saving_config['reed_switch_pin'],
         led_pin=power_saving_config['led_pin'],
         check_interval=power_saving_config['check_interval'],
-        buzzer_pin=buzzer_pin,
-        beep_in_config_mode=power_saving_config['beep_in_config_mode'],
-        beep_interval=power_saving_config['beep_interval'],
-        beep_duration=power_saving_config['beep_duration'],
         # Component-specific controls
         disable_wifi=power_saving_config['disable_wifi'],
         disable_bluetooth=power_saving_config['disable_bluetooth'],
