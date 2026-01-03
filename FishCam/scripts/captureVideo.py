@@ -149,7 +149,7 @@ def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
 
     # Record video
     output = FileOutput(videofilename)
-    video_start_time = datetime.now().isoformat()
+    video_start_time = datetime.now().astimezone().strftime('%Y%m%dT%H%M%S.%f%z')
     camera.start_recording(encoder, output, quality_setting)
     time.sleep(videoSettings['duration'])
     camera.stop_recording()
