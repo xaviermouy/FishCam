@@ -8,7 +8,7 @@ fishcam:
 # Video Capture Settings
 video:
   duration: 900  # Duration of each video file in seconds
-  resolution: [1600,1200] #[2028, 1520] #[1600,1200]  # Video resolution [width, height] in pixels
+  resolution: [1920,1080] #[1920,1080] #[2560, 1920] #[2032,1520]  # Video resolution [width, height] in pixels
   frameRate: 10  # Frame rate in frames per second
   quality: 'medium'  # Encoding quality: 'very_low', 'low', 'medium', 'high', 'very_high'
   format: 'h264'  # Video format: 'h264' or 'mjpeg'
@@ -57,6 +57,18 @@ buzzer:
     total_fishcams: 6  # Total number of fishcams being deployed
     base_beeps: 10  # Base number of beeps (fishcam_number will be added to this)
     safety_buffer_sec: 2  # Safety buffer in seconds added to initial delays (accounts for clock drift/startup delays)
+
+# Power Saving Mode Settings
+power_saving:
+  enabled: true  # Enable(true)/disable(false) power saving mode (requires reed switch hardware)
+  reed_switch_pin: 18  # GPIO pin for reed switch (BCM numbering, right side of Pi)
+  led_pin: 23  # GPIO pin for status LED (BCM numbering, right side of Pi)
+  check_interval: 2.0  # How often to check reed switch state (seconds)
+
+  # Audio feedback when in configuration mode
+  beep_in_config_mode: false  # Enable/disable periodic beeps when magnet is near
+  beep_interval: 10.0  # Interval between beeps in seconds
+  beep_duration: 0.1  # Duration of each beep in seconds
 
 # File Paths and Directories
 paths:

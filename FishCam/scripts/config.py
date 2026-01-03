@@ -122,6 +122,25 @@ class FishCamConfig:
             'iterator_file': paths.get('iterator_file', 'iterator.config')
         }
 
+    def get_power_saving_settings(self):
+        """
+        Get power saving mode settings
+
+        Returns:
+            dict: Power saving settings
+        """
+        power_saving = self.config.get('power_saving', {})
+
+        return {
+            'enabled': power_saving.get('enabled', False),
+            'reed_switch_pin': power_saving.get('reed_switch_pin', 18),
+            'led_pin': power_saving.get('led_pin', 23),
+            'check_interval': power_saving.get('check_interval', 2.0),
+            'beep_in_config_mode': power_saving.get('beep_in_config_mode', False),
+            'beep_interval': power_saving.get('beep_interval', 10.0),
+            'beep_duration': power_saving.get('beep_duration', 0.1)
+        }
+
     def get(self, *keys, default=None):
         """
         Get a nested configuration value using dot notation or multiple keys
@@ -187,3 +206,7 @@ def get_fishcam_id():
 def get_paths():
     """Get file paths from configuration"""
     return get_config().get_paths()
+
+def get_power_saving_settings():
+    """Get power saving mode settings from configuration"""
+    return get_config().get_power_saving_settings()
