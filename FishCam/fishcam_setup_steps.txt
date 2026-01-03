@@ -16,7 +16,7 @@ sudo apt install git
 cd /home/fishcam/Desktop/
 git clone https://github.com/xaviermouy/FishCam.git.
 
-chmod +x /home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCam.sh
+chmod +x /home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCamRepo.sh
 
 4- Open control center:
 Interfaces > enable ssh
@@ -43,7 +43,7 @@ Manual
 	git reset --hard origin/main
 	git clean -fd
 automated:
-	./home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCam.sh
+	./home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCamRepo.sh
 
 7- Install WittyPi (v4 mini):
 cd /home/fishcam/Desktop

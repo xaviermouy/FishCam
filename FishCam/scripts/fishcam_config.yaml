@@ -60,7 +60,7 @@ buzzer:
 
 # Power Saving Mode Settings
 power_saving:
-  enabled: true  # Enable(true)/disable(false) power saving mode (requires reed switch hardware)
+  enabled: false  # Enable(true)/disable(false) power saving mode (requires reed switch hardware)
   reed_switch_pin: 18  # GPIO pin for reed switch (BCM numbering, right side of Pi)
   led_pin: 23  # GPIO pin for status LED (BCM numbering, right side of Pi)
   check_interval: 2.0  # How often to check reed switch state (seconds)
@@ -75,11 +75,11 @@ power_saving:
   components:
     disable_wifi: true  # Disable WiFi in power saving mode (~40-50 mA savings)
     disable_bluetooth: true  # Disable Bluetooth in power saving mode (~10-15 mA savings)
-    disable_hdmi: true  # Disable HDMI output in power saving mode (~20-30 mA savings)
-    disable_usb: true  # Enable USB autosuspend in power saving mode (~20-30 mA savings)
+    disable_hdmi: false  # Disable HDMI output in power saving mode (~20-30 mA savings)
+    disable_usb: false  # Enable USB autosuspend in power saving mode (~20-30 mA savings)
     throttle_cpu: true  # Throttle CPU frequency (1000 MHz -> 600 MHz) (~50-100 mA savings)
     stop_services: true  # Stop non-essential services (~10-20 mA savings)
-    disable_led_triggers: true  # Disable activity LED triggers (minimal savings)
+    disable_led_triggers: false  # Disable activity LED triggers (minimal savings)
 
 # File Paths and Directories
 paths:
