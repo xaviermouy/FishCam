@@ -65,19 +65,14 @@ power_saving:
   led_pin: 23  # GPIO pin for status LED (BCM numbering, right side of Pi)
   check_interval: 2.0  # How often to check reed switch state (seconds)
 
-  # Audio feedback when in configuration mode
-  beep_in_config_mode: false  # Enable/disable periodic beeps when magnet is near
-  beep_interval: 10.0  # Interval between beeps in seconds
-  beep_duration: 0.1  # Duration of each beep in seconds
-
   # Component-specific power saving controls
   # Each component can be individually enabled/disabled
   components:
     disable_wifi: true  # Disable WiFi in power saving mode (~40-50 mA savings)
-    disable_bluetooth: true  # Disable Bluetooth in power saving mode (~10-15 mA savings)
+    disable_bluetooth: false  # Disable Bluetooth in power saving mode (~10-15 mA savings)
     disable_hdmi: false  # Disable HDMI output in power saving mode (~20-30 mA savings)
     disable_usb: false  # Enable USB autosuspend in power saving mode (~20-30 mA savings)
-    throttle_cpu: true  # Throttle CPU frequency (1000 MHz -> 600 MHz) (~50-100 mA savings)
+    throttle_cpu: false  # Throttle CPU frequency (1000 MHz -> 600 MHz) (~50-100 mA savings)
     stop_services: true  # Stop non-essential services (~10-20 mA savings)
     disable_led_triggers: false  # Disable activity LED triggers (minimal savings)
 

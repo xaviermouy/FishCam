@@ -71,6 +71,13 @@ class PowerSavingController:
             logging.info(f"GPIO initialized: Reed switch on GPIO{self.reed_pin}, LED on GPIO{self.led_pin}")
         except Exception as e:
             logging.error(f"Failed to initialize GPIO: {e}")
+            # Cleanup GPIO handle on initialization failure
+            if self.gpio_handle is not None:
+                try:
+                    lgpio.gpiochip_close(self.gpio_handle)
+                except:
+                    pass
+                self.gpio_handle = None
             raise
 
     def read_reed_switch(self):

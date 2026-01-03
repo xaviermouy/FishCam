@@ -137,9 +137,6 @@ class FishCamConfig:
             'reed_switch_pin': power_saving.get('reed_switch_pin', 18),
             'led_pin': power_saving.get('led_pin', 23),
             'check_interval': power_saving.get('check_interval', 2.0),
-            'beep_in_config_mode': power_saving.get('beep_in_config_mode', False),
-            'beep_interval': power_saving.get('beep_interval', 10.0),
-            'beep_duration': power_saving.get('beep_duration', 0.1),
             # Component-specific controls (default all to True for backward compatibility)
             'disable_wifi': components.get('disable_wifi', True),
             'disable_bluetooth': components.get('disable_bluetooth', True),
