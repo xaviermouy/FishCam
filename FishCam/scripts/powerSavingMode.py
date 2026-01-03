@@ -34,9 +34,6 @@ import os
 from pathlib import Path
 import config
 
-# State file to persist mode across reboots
-STATE_FILE = '/tmp/fishcam_power_mode.state'
-
 
 class PowerSavingController:
     def __init__(self, reed_pin, led_pin, check_interval, buzzer_pin=None,
@@ -218,7 +215,6 @@ class PowerSavingController:
             logging.info("LED trigger disable skipped (disabled in config)")
 
         self.current_mode = 'power_saving'
-        self.save_state('power_saving')
         logging.info("Power saving mode activated")
 
     def enter_config_mode(self):
@@ -295,36 +291,13 @@ class PowerSavingController:
             logging.info("LED trigger restore skipped (were not disabled)")
 
         self.current_mode = 'config'
-        self.save_state('config')
         logging.info("Configuration mode activated")
-
-    def save_state(self, state):
-        """Save current state to file"""
-        try:
-            with open(STATE_FILE, 'w') as f:
-                f.write(state)
-        except Exception as e:
-            logging.error(f"Failed to save state: {e}")
-
-    def load_state(self):
-        """Load saved state from file"""
-        try:
-            if os.path.exists(STATE_FILE):
-                with open(STATE_FILE, 'r') as f:
-                    return f.read().strip()
-        except Exception as e:
-            logging.error(f"Failed to load state: {e}")
-        return 'power_saving'  # Default to power saving
 
     def run(self):
         """Main loop - monitor reed switch and manage power modes"""
         logging.info("Power saving controller started")
 
-        # Load previous state or default to power saving
-        saved_state = self.load_state()
-        logging.info(f"Previous state: {saved_state}")
-
-        # Initial state based on reed switch
+        # Set initial mode based on reed switch position
         magnet_present = self.read_reed_switch()
         if magnet_present:
             logging.info("Reed switch activated at startup - entering config mode")
