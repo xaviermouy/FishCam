@@ -11,7 +11,8 @@ cd /home/fishcam/Desktop/FishCam/FishCam/scripts/
 # Create logs directory if it doesn't exist
 mkdir -p ../logs
 
-# Auto-connect to WiFi if configured
+# Auto-connect to WiFi if configured AND power saving mode is disabled
+# If power saving is enabled, powerSavingMode.py will handle WiFi based on reed switch
 echo "Checking WiFi auto-connect configuration..."
 python3 - << 'PYEOF'
 import yaml
@@ -23,12 +24,15 @@ try:
         config = yaml.safe_load(f)
 
     power_saving = config.get('power_saving', {})
+    power_saving_enabled = power_saving.get('enabled', False)
     wifi_auto_connect = power_saving.get('wifi_auto_connect', False)
     wifi_ssid = power_saving.get('wifi_ssid', '')
     wifi_password = power_saving.get('wifi_password', '')
 
-    if wifi_auto_connect and wifi_ssid and wifi_password:
-        print(f"Connecting to WiFi: {wifi_ssid}")
+    # Only auto-connect at boot if power saving mode is disabled
+    # When power saving is enabled, let powerSavingMode.py handle WiFi
+    if not power_saving_enabled and wifi_auto_connect and wifi_ssid and wifi_password:
+        print(f"Power saving disabled - connecting to WiFi: {wifi_ssid}")
         result = subprocess.run(
             f'nmcli device wifi connect "{wifi_ssid}" password "{wifi_password}" wpa-psk',
             shell=True,
@@ -39,6 +43,8 @@ try:
             print(f"Successfully connected to {wifi_ssid}")
         else:
             print(f"Failed to connect: {result.stderr}")
+    elif power_saving_enabled:
+        print("Power saving enabled - WiFi will be controlled by powerSavingMode.py based on reed switch")
     else:
         print("WiFi auto-connect not configured or disabled")
 except Exception as e:
