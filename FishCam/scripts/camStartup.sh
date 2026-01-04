@@ -30,7 +30,7 @@ try:
     if wifi_auto_connect and wifi_ssid and wifi_password:
         print(f"Connecting to WiFi: {wifi_ssid}")
         result = subprocess.run(
-            f'nmcli device wifi connect "{wifi_ssid}" password "{wifi_password}"',
+            f'nmcli device wifi connect "{wifi_ssid}" password "{wifi_password}" wpa-psk',
             shell=True,
             capture_output=True,
             text=True

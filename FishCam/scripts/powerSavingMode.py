@@ -147,10 +147,10 @@ class PowerSavingController:
 
         logging.info(f"Connecting to WiFi network: {self.wifi_ssid}")
 
-        # Use nmcli to connect to WiFi
+        # Use nmcli to connect to WiFi with explicit security type
         # This will add the network if it doesn't exist, or connect if it does
         result = self.run_command(
-            f"nmcli device wifi connect \"{self.wifi_ssid}\" password \"{self.wifi_password}\""
+            f"nmcli device wifi connect \"{self.wifi_ssid}\" password \"{self.wifi_password}\" wpa-psk"
         )
 
         if result:
@@ -171,7 +171,8 @@ class PowerSavingController:
         # Disable WiFi (if enabled in config)
         if self.disable_wifi:
             logging.info("Disabling WiFi...")
-            self.run_command("sudo rfkill block wifi")
+            # Use nmcli instead of rfkill to properly work with NetworkManager
+            self.run_command("nmcli radio wifi off")
         else:
             logging.info("WiFi disable skipped (disabled in config)")
 
@@ -201,12 +202,21 @@ class PowerSavingController:
             # Set CPU governor to powersave
             logging.info("Setting CPU to powersave mode...")
             for cpu in range(4):  # Pi Zero 2W has 4 cores
-                self.run_command(f"echo powersave | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
+                # Check if cpufreq interface exists for this CPU
+                if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor"):
+                    self.run_command(f"echo powersave | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
+                elif cpu == 0:
+                    logging.warning(f"CPU frequency scaling not available on this system")
+                    break
 
             # Cap CPU frequency to reduce power (1000 MHz -> 600 MHz)
             logging.info("Capping CPU frequency to 600 MHz...")
             for cpu in range(4):
-                self.run_command(f"echo 600000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+                if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq"):
+                    self.run_command(f"echo 600000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+                elif cpu == 0:
+                    logging.warning(f"CPU frequency capping not available on this system")
+                    break
         else:
             logging.info("CPU throttling skipped (disabled in config)")
 
@@ -249,7 +259,8 @@ class PowerSavingController:
         # Enable WiFi (if it was disabled in power saving mode)
         if self.disable_wifi:
             logging.info("Enabling WiFi...")
-            self.run_command("sudo rfkill unblock wifi")
+            # Use nmcli instead of rfkill to properly work with NetworkManager
+            self.run_command("nmcli radio wifi on")
             # Wait for WiFi to initialize before attempting connection
             time.sleep(3)
             # Auto-connect to configured network
@@ -285,12 +296,20 @@ class PowerSavingController:
             # Set CPU governor to ondemand (balanced performance)
             logging.info("Setting CPU to ondemand mode...")
             for cpu in range(4):
-                self.run_command(f"echo ondemand | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
+                if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor"):
+                    self.run_command(f"echo ondemand | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
+                elif cpu == 0:
+                    logging.warning(f"CPU frequency scaling not available on this system")
+                    break
 
             # Restore max CPU frequency
             logging.info("Restoring CPU frequency to 1000 MHz...")
             for cpu in range(4):
-                self.run_command(f"echo 1000000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+                if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq"):
+                    self.run_command(f"echo 1000000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+                elif cpu == 0:
+                    logging.warning(f"CPU frequency capping not available on this system")
+                    break
         else:
             logging.info("CPU restore skipped (was not throttled)")
 
