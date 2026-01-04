@@ -76,9 +76,9 @@ power_saving:
     disable_wifi: true  # Disable WiFi in power saving mode (~40-50 mA savings)
     disable_bluetooth: true  # Disable Bluetooth in power saving mode (~10-15 mA savings)
     disable_hdmi: false  # Disable HDMI output in power saving mode (~20-30 mA savings)
-    disable_usb: false  # Enable USB autosuspend in power saving mode (~20-30 mA savings)
-    throttle_cpu: false  # Throttle CPU frequency (1000 MHz -> 600 MHz) (~50-100 mA savings)
-    stop_services: false  # Stop non-essential services (~10-20 mA savings)
+    disable_usb: true  # Enable USB autosuspend in power saving mode (~20-30 mA savings)
+    throttle_cpu: true # Throttle CPU frequency (1000 MHz -> 700 MHz) (~50-100 mA savings)
+    stop_services: true  # Stop non-essential services (~10-20 mA savings)
     disable_led_triggers: false  # Disable activity LED triggers (minimal savings)
 
 # File Paths and Directories
