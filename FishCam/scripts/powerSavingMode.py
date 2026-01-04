@@ -39,7 +39,8 @@ class PowerSavingController:
     def __init__(self, reed_pin, led_pin, check_interval,
                  disable_wifi=True, disable_bluetooth=True, disable_hdmi=True,
                  disable_usb=False, throttle_cpu=True, stop_services=True,
-                 disable_led_triggers=True):
+                 disable_led_triggers=True, wifi_auto_connect=False,
+                 wifi_ssid='', wifi_password=''):
         self.reed_pin = reed_pin
         self.led_pin = led_pin
         self.check_interval = check_interval
@@ -52,6 +53,11 @@ class PowerSavingController:
         self.throttle_cpu = throttle_cpu
         self.stop_services = stop_services
         self.disable_led_triggers = disable_led_triggers
+
+        # WiFi auto-connect settings
+        self.wifi_auto_connect = wifi_auto_connect
+        self.wifi_ssid = wifi_ssid
+        self.wifi_password = wifi_password
 
         self.gpio_handle = None
         self.current_mode = None  # 'config' or 'power_saving'
@@ -117,6 +123,41 @@ class PowerSavingController:
             logging.error(f"Failed to run command '{command}': {e}")
             return False
 
+    def service_exists(self, service_name):
+        """Check if a systemd service exists"""
+        try:
+            result = subprocess.run(
+                f"systemctl list-unit-files {service_name}.service",
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            return service_name in result.stdout
+        except Exception:
+            return False
+
+    def connect_wifi(self):
+        """Connect to configured WiFi network"""
+        if not self.wifi_auto_connect:
+            return
+
+        if not self.wifi_ssid or not self.wifi_password:
+            logging.warning("WiFi auto-connect enabled but SSID or password not configured")
+            return
+
+        logging.info(f"Connecting to WiFi network: {self.wifi_ssid}")
+
+        # Use nmcli to connect to WiFi
+        # This will add the network if it doesn't exist, or connect if it does
+        result = self.run_command(
+            f"nmcli device wifi connect \"{self.wifi_ssid}\" password \"{self.wifi_password}\""
+        )
+
+        if result:
+            logging.info(f"Successfully connected to {self.wifi_ssid}")
+        else:
+            logging.warning(f"Failed to connect to {self.wifi_ssid}")
+
     def enter_power_saving_mode(self):
         """Enter power saving mode (deployment mode)"""
         if self.current_mode == 'power_saving':
@@ -178,7 +219,10 @@ class PowerSavingController:
                 'bluetooth',         # Bluetooth service
             ]
             for service in services_to_stop:
-                self.run_command(f"sudo systemctl stop {service}")
+                if self.service_exists(service):
+                    self.run_command(f"sudo systemctl stop {service}")
+                else:
+                    logging.info(f"Service '{service}' not found, skipping...")
         else:
             logging.info("Service stopping skipped (disabled in config)")
 
@@ -206,6 +250,10 @@ class PowerSavingController:
         if self.disable_wifi:
             logging.info("Enabling WiFi...")
             self.run_command("sudo rfkill unblock wifi")
+            # Wait for WiFi to initialize before attempting connection
+            time.sleep(3)
+            # Auto-connect to configured network
+            self.connect_wifi()
         else:
             logging.info("WiFi enable skipped (was not disabled)")
 
@@ -255,7 +303,10 @@ class PowerSavingController:
                 'bluetooth',
             ]
             for service in services_to_start:
-                self.run_command(f"sudo systemctl start {service}")
+                if self.service_exists(service):
+                    self.run_command(f"sudo systemctl start {service}")
+                else:
+                    logging.info(f"Service '{service}' not found, skipping...")
         else:
             logging.info("Service starting skipped (were not stopped)")
 
@@ -356,6 +407,12 @@ def main():
     logging.info(f"Status LED on GPIO {power_saving_config['led_pin']}")
     logging.info(f"Check interval: {power_saving_config['check_interval']}s")
 
+    # Log WiFi auto-connect settings
+    if power_saving_config['wifi_auto_connect']:
+        logging.info(f"WiFi auto-connect ENABLED: {power_saving_config['wifi_ssid']}")
+    else:
+        logging.info("WiFi auto-connect DISABLED")
+
     # Log component-specific power saving settings
     logging.info("Power saving components:")
     logging.info(f"  - WiFi disable: {power_saving_config['disable_wifi']}")
@@ -382,7 +439,11 @@ def main():
         disable_usb=power_saving_config['disable_usb'],
         throttle_cpu=power_saving_config['throttle_cpu'],
         stop_services=power_saving_config['stop_services'],
-        disable_led_triggers=power_saving_config['disable_led_triggers']
+        disable_led_triggers=power_saving_config['disable_led_triggers'],
+        # WiFi auto-connect
+        wifi_auto_connect=power_saving_config['wifi_auto_connect'],
+        wifi_ssid=power_saving_config['wifi_ssid'],
+        wifi_password=power_saving_config['wifi_password']
     )
     controller.run()
 

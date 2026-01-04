@@ -137,6 +137,10 @@ class FishCamConfig:
             'reed_switch_pin': power_saving.get('reed_switch_pin', 18),
             'led_pin': power_saving.get('led_pin', 23),
             'check_interval': power_saving.get('check_interval', 2.0),
+            # WiFi auto-connect settings
+            'wifi_auto_connect': power_saving.get('wifi_auto_connect', False),
+            'wifi_ssid': power_saving.get('wifi_ssid', ''),
+            'wifi_password': power_saving.get('wifi_password', ''),
             # Component-specific controls (default all to True for backward compatibility)
             'disable_wifi': components.get('disable_wifi', True),
             'disable_bluetooth': components.get('disable_bluetooth', True),
