@@ -141,6 +141,9 @@ class FishCamConfig:
             'wifi_auto_connect': power_saving.get('wifi_auto_connect', False),
             'wifi_ssid': power_saving.get('wifi_ssid', ''),
             'wifi_password': power_saving.get('wifi_password', ''),
+            # CPU frequency settings (in MHz)
+            'cpu_freq_power_saving': power_saving.get('cpu_freq_power_saving', 800),
+            'cpu_freq_config': power_saving.get('cpu_freq_config', 1000),
             # Component-specific controls (default all to True for backward compatibility)
             'disable_wifi': components.get('disable_wifi', True),
             'disable_bluetooth': components.get('disable_bluetooth', True),

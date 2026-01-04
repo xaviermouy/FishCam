@@ -3,7 +3,7 @@
 # This script is executed on boot via cron job
 
 # Initial delay to let system stabilize
-sleep 10
+sleep 30
 
 # Change to scripts directory
 cd /home/fishcam/Desktop/FishCam/FishCam/scripts/

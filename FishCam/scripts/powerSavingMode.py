@@ -40,7 +40,8 @@ class PowerSavingController:
                  disable_wifi=True, disable_bluetooth=True, disable_hdmi=True,
                  disable_usb=False, throttle_cpu=True, stop_services=True,
                  disable_led_triggers=True, wifi_auto_connect=False,
-                 wifi_ssid='', wifi_password=''):
+                 wifi_ssid='', wifi_password='',
+                 cpu_freq_power_saving=800, cpu_freq_config=1000):
         self.reed_pin = reed_pin
         self.led_pin = led_pin
         self.check_interval = check_interval
@@ -58,6 +59,10 @@ class PowerSavingController:
         self.wifi_auto_connect = wifi_auto_connect
         self.wifi_ssid = wifi_ssid
         self.wifi_password = wifi_password
+
+        # CPU frequency settings (in MHz)
+        self.cpu_freq_power_saving = cpu_freq_power_saving
+        self.cpu_freq_config = cpu_freq_config
 
         self.gpio_handle = None
         self.current_mode = None  # 'config' or 'power_saving'
@@ -172,7 +177,27 @@ class PowerSavingController:
         if self.disable_wifi:
             logging.info("Disabling WiFi...")
             # Use nmcli instead of rfkill to properly work with NetworkManager
-            self.run_command("nmcli radio wifi off")
+            # Retry loop to fight NetworkManager auto-connect at boot
+            max_attempts = 15
+            retry_interval = 1.0
+            for attempt in range(max_attempts):
+                self.run_command("nmcli radio wifi off")
+                time.sleep(retry_interval)
+
+                # Check if WiFi is actually off
+                result = subprocess.run(
+                    "nmcli radio wifi",
+                    shell=True,
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0 and "disabled" in result.stdout.lower():
+                    logging.info(f"WiFi successfully disabled (attempt {attempt + 1}/{max_attempts})")
+                    break
+                elif attempt < max_attempts - 1:
+                    logging.info(f"WiFi still enabled, retrying... (attempt {attempt + 1}/{max_attempts})")
+                else:
+                    logging.warning(f"WiFi may still be enabled after {max_attempts} attempts")
         else:
             logging.info("WiFi disable skipped (disabled in config)")
 
@@ -209,11 +234,12 @@ class PowerSavingController:
                     logging.warning(f"CPU frequency scaling not available on this system")
                     break
 
-            # Cap CPU frequency to reduce power (1000 MHz -> 600 MHz)
-            logging.info("Capping CPU frequency to 600 MHz...")
+            # Cap CPU frequency to reduce power
+            freq_khz = self.cpu_freq_power_saving * 1000  # Convert MHz to kHz
+            logging.info(f"Capping CPU frequency to {self.cpu_freq_power_saving} MHz...")
             for cpu in range(4):
                 if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq"):
-                    self.run_command(f"echo 600000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+                    self.run_command(f"echo {freq_khz} | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
                 elif cpu == 0:
                     logging.warning(f"CPU frequency capping not available on this system")
                     break
@@ -303,10 +329,11 @@ class PowerSavingController:
                     break
 
             # Restore max CPU frequency
-            logging.info("Restoring CPU frequency to 1000 MHz...")
+            freq_khz = self.cpu_freq_config * 1000  # Convert MHz to kHz
+            logging.info(f"Restoring CPU frequency to {self.cpu_freq_config} MHz...")
             for cpu in range(4):
                 if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq"):
-                    self.run_command(f"echo 1000000 | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
+                    self.run_command(f"echo {freq_khz} | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
                 elif cpu == 0:
                     logging.warning(f"CPU frequency capping not available on this system")
                     break
@@ -439,6 +466,9 @@ def main():
     logging.info(f"  - HDMI disable: {power_saving_config['disable_hdmi']}")
     logging.info(f"  - USB autosuspend: {power_saving_config['disable_usb']}")
     logging.info(f"  - CPU throttling: {power_saving_config['throttle_cpu']}")
+    if power_saving_config['throttle_cpu']:
+        logging.info(f"    Power saving freq: {power_saving_config['cpu_freq_power_saving']} MHz")
+        logging.info(f"    Config mode freq: {power_saving_config['cpu_freq_config']} MHz")
     logging.info(f"  - Stop services: {power_saving_config['stop_services']}")
     logging.info(f"  - Disable LED triggers: {power_saving_config['disable_led_triggers']}")
 
@@ -462,7 +492,10 @@ def main():
         # WiFi auto-connect
         wifi_auto_connect=power_saving_config['wifi_auto_connect'],
         wifi_ssid=power_saving_config['wifi_ssid'],
-        wifi_password=power_saving_config['wifi_password']
+        wifi_password=power_saving_config['wifi_password'],
+        # CPU frequency settings
+        cpu_freq_power_saving=power_saving_config['cpu_freq_power_saving'],
+        cpu_freq_config=power_saving_config['cpu_freq_config']
     )
     controller.run()
 

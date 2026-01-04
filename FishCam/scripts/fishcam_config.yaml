@@ -70,6 +70,11 @@ power_saving:
   wifi_ssid: "FishcamNetwork"  # WiFi network name (SSID)
   wifi_password: "Fi$hCam2000"  # WiFi password
 
+  # CPU Frequency Control (in MHz)
+  # Pi Zero 2W range: 600 MHz (low) to 1000 MHz (high), overclockable to 1200 MHz
+  cpu_freq_power_saving: 800  # CPU frequency in power saving mode (600-1000 MHz)
+  cpu_freq_config: 1000  # CPU frequency in config mode (600-1000 MHz)
+
   # Component-specific power saving controls
   # Each component can be individually enabled/disabled
   components:
@@ -77,7 +82,7 @@ power_saving:
     disable_bluetooth: true  # Disable Bluetooth in power saving mode (~10-15 mA savings)
     disable_hdmi: false  # Disable HDMI output in power saving mode (~20-30 mA savings)
     disable_usb: false  # Enable USB autosuspend in power saving mode (~20-30 mA savings)
-    throttle_cpu: true # Throttle CPU frequency (1000 MHz -> 700 MHz) (~50-100 mA savings)
+    throttle_cpu: true  # Throttle CPU frequency (1000 MHz -> 800 MHz) (~50-100 mA savings)
     stop_services: true  # Stop non-essential services (~10-20 mA savings)
     disable_led_triggers: false  # Disable activity LED triggers (minimal savings)
 
