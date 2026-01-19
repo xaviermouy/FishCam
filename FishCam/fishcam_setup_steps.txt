@@ -55,6 +55,7 @@ sudo sh /home/fishcam/Desktop/wittypi/wittyPi.sh
 > synchronise network time
 > view/change other settings
 > default state when powered: ON
+> set min voltage to 5.5V
 
 9- Change hostname 
 Open control center > System > Change hostname to fishcam0x
@@ -84,6 +85,12 @@ Add colored tape to chassis and bottle to indicate the "up" side
 
 17- Make sure coin battery is set on the board
 
-18- Close bottle
+18- Make sure screws of the frame are tight
 
-19- Test that bootle is sealed properly using pump
+19- Make sure the camera ribbon cable is well attacehd on both ends
+
+20- Check o-rings and grease
+
+21- Close bottle
+
+22- Test that bootle is sealed properly using pump
