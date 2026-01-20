@@ -1,24 +1,18 @@
 #!/usr/bin/env python3
 """
 Parser for wittyPi log files.
-Extracts voltage readings (Vin and Vout) with timestamps and saves to CSV.
-Can also generate plots of voltage over time.
+Extracts voltage readings (Vin and Vout) with timestamps and saves to CSV and plot.
 
 Usage examples:
-    # Basic usage - parse log and save to CSV (default: <log_file>_voltages.csv)
-    python parse_wittypi_log.py /path/to/wittyPi.log
+    # Basic usage - parse log and save to output folder
+    python parse_wittypi_log.py /path/to/wittyPi.log /path/to/output
 
-    # Specify custom output CSV file
-    python parse_wittypi_log.py /path/to/wittyPi.log --save-csv voltages.csv
+    # Display the plot interactively (in addition to saving)
+    python parse_wittypi_log.py /path/to/wittyPi.log /path/to/output --show
 
-    # Create and display a plot
-    python parse_wittypi_log.py /path/to/wittyPi.log --plot
-
-    # Save plot to file
-    python parse_wittypi_log.py /path/to/wittyPi.log --save-figure voltage_plot.png
-
-    # Both CSV and plot
-    python parse_wittypi_log.py /path/to/wittyPi.log --save-csv voltages.csv --save-figure voltage_plot.png
+Output files created in output folder:
+    - wittypi_voltages.csv: Voltage readings with timestamps
+    - wittypi_voltages.png: Plot of Vin and Vout over time
 
 Requirements:
     - matplotlib (for plotting): pip install matplotlib
@@ -112,13 +106,13 @@ def save_to_csv(data, output_file):
     print(f"Data saved to {output_file}")
 
 
-def plot_voltages(data, output_file=None):
+def plot_voltages(data, output_file):
     """
-    Create a plot of Vin and Vout over time.
+    Create a plot of Vin and Vout over time and save to file.
 
     Args:
         data (list): List of dictionaries with voltage data
-        output_file (str, optional): Path to save the plot. If None, displays the plot.
+        output_file (str): Path to save the plot
     """
     try:
         import matplotlib.pyplot as plt
@@ -156,11 +150,8 @@ def plot_voltages(data, output_file=None):
 
     plt.tight_layout()
 
-    if output_file:
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to {output_file}")
-    else:
-        plt.show()
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    print(f"Plot saved to {output_file}")
 
 
 def main():
@@ -174,21 +165,14 @@ def main():
         help='Path to the wittyPi log file'
     )
     parser.add_argument(
-        '--save-csv',
+        'output_folder',
         type=str,
-        default=None,
-        help='Output CSV file path (default: <log_file>_voltages.csv)'
+        help='Path to the output folder for results'
     )
     parser.add_argument(
-        '--plot',
+        '--show',
         action='store_true',
-        help='Create and display a plot of the voltage data'
-    )
-    parser.add_argument(
-        '--save-figure',
-        type=str,
-        default=None,
-        help='Save plot to file (e.g., plot.png)'
+        help='Display the plot interactively (in addition to saving)'
     )
 
     args = parser.parse_args()
@@ -199,11 +183,13 @@ def main():
         print(f"Error: Log file '{args.log_file}' not found.")
         return
 
-    # Determine output CSV file name
-    if args.save_csv:
-        csv_output = args.save_csv
-    else:
-        csv_output = log_path.stem + '_voltages.csv'
+    # Create output folder if it doesn't exist
+    output_path = Path(args.output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Define output file paths
+    csv_output = output_path / 'wittypi_voltages.csv'
+    plot_output = output_path / 'wittypi_voltages.png'
 
     # Parse the log file
     print(f"Parsing log file: {args.log_file}")
@@ -223,9 +209,16 @@ def main():
     # Save to CSV
     save_to_csv(data, csv_output)
 
-    # Create plot if requested
-    if args.plot or args.save_figure:
-        plot_voltages(data, args.save_figure)
+    # Create and save plot
+    plot_voltages(data, plot_output)
+
+    # Show plot if requested
+    if args.show:
+        try:
+            import matplotlib.pyplot as plt
+            plt.show()
+        except ImportError:
+            print("Warning: matplotlib not available for displaying plot.")
 
 
 if __name__ == '__main__':
