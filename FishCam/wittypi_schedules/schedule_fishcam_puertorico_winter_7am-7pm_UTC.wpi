@@ -18,3 +18,5 @@ ON	H3  		# Cycle 4: 20:00 - 23:00 UTC (4:00 PM - 6:00 PM local)
 
 # Night shutdown (7PM - 7AM Puerto Rico time = 23:00 - 11:00 UTC)
 OFF	H12		# Off for 12 hours until 11:00 UTC next day
+
+WATCHDOG 180

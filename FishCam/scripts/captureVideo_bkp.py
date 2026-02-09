@@ -1,5 +1,4 @@
 from picamera2 import Picamera2
-import signal
 from picamera2.encoders import H264Encoder, MJPEGEncoder, Quality
 from picamera2.outputs import FileOutput
 import time
@@ -14,16 +13,6 @@ import config
 # Global list to store frame metadata
 frame_metadata = []
 frame_counter = 0
-
-def emergency_shutdown(signum, frame):
-    """Handle shutdown signals from WittyPi"""
-    logging.info(f"Received shutdown signal {signum}, exiting...")
-    print("Emergency shutdown!")
-    sys.exit(0)
-
-# Register signal handlers
-signal.signal(signal.SIGTERM, emergency_shutdown)
-signal.signal(signal.SIGINT, emergency_shutdown)
 
 def initVideoSettings():
     """Load video settings from configuration file"""

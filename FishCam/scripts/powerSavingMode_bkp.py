@@ -32,7 +32,6 @@ import logging
 import sys
 import os
 from pathlib import Path
-import signal
 import config
 
 
@@ -46,7 +45,6 @@ class PowerSavingController:
         self.reed_pin = reed_pin
         self.led_pin = led_pin
         self.check_interval = check_interval
-        self.shutdown_requested = False
 
         # Component-specific power saving controls
         self.disable_wifi = disable_wifi
@@ -381,7 +379,7 @@ class PowerSavingController:
             self.enter_power_saving_mode()
 
         try:
-            while not self.shutdown_requested:
+            while True:
                 # Check reed switch state
                 magnet_present = self.read_reed_switch()
 
@@ -415,11 +413,6 @@ class PowerSavingController:
                 logging.info("GPIO cleaned up")
             except Exception as e:
                 logging.error(f"Failed to clean up GPIO: {e}")
-
-    def signal_handler(self, signum, frame):
-        """Handle shutdown signals"""
-        logging.info(f"Received shutdown signal {signum}, shutting down gracefully...")
-        self.shutdown_requested = True
 
 
 def main():
@@ -504,12 +497,6 @@ def main():
         cpu_freq_power_saving=power_saving_config['cpu_freq_power_saving'],
         cpu_freq_config=power_saving_config['cpu_freq_config']
     )
-    
-    # Register signal handlers
-    signal.signal(signal.SIGTERM, controller.signal_handler)
-    signal.signal(signal.SIGINT, controller.signal_handler)
-    logging.info("Signal handlers registered")
-    
     controller.run()
 
 
