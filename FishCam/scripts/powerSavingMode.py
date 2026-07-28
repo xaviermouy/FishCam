@@ -2,23 +2,26 @@
 """
 FishCam Power Saving Mode Controller
 
-This script monitors a reed switch to toggle between power saving mode (deployment)
-and configuration mode. When a magnet is brought near the reed switch, the system
-enters configuration mode with full power. When removed, it enters power saving mode
-to maximize battery life during underwater deployments.
+This script monitors a magnetic latch switch (T092UA) to toggle between power saving
+mode (deployment) and configuration mode. A brief pass of a magnet toggles the switch:
+once ON it stays ON (config mode), once OFF it stays OFF (power saving mode).
 
 Hardware (configurable in fishcam_config.yaml):
-- Reed switch on GPIO 18 (default, Pin 12 - right side)
-- Status LED on GPIO 23 (default, Pin 16 - right side)
+- Magnetic latch switch (T092UA) on GPIO 24 (default, Pin 18 - right side)
+  Connect COM to GPIO 24 and NO to GND. Uses internal pull-up.
+  Latched ON (contacts closed) = Config mode
+  Latched OFF (contacts open)  = Power saving mode
+- Red status LED on GPIO 23 (default, Pin 16 - right side)
+  GPIO 23 → 220Ω → LED anode (+) → LED cathode (−) → GND
 
-Power Saving Mode (LED OFF):
+Power Saving Mode (LED flashes briefly once every 10 s):
 - WiFi disabled
 - Bluetooth disabled
-- HDMI output disabled
+- HDMI output disabled (configurable)
 - CPU frequency capped
 - Non-essential services stopped
 
-Configuration Mode (LED ON):
+Configuration Mode (LED solid ON):
 - Full power restored
 - WiFi enabled
 - HDMI enabled
@@ -37,6 +40,9 @@ import config
 
 
 class PowerSavingController:
+    CONFIG_LED_FLASH_INTERVAL = 10.0  # seconds between flashes in power saving mode
+    CONFIG_LED_FLASH_DURATION = 0.1   # seconds the LED stays on per flash
+
     def __init__(self, reed_pin, led_pin, check_interval,
                  disable_wifi=True, disable_bluetooth=True, disable_hdmi=True,
                  disable_usb=False, throttle_cpu=True, stop_services=True,
@@ -68,20 +74,22 @@ class PowerSavingController:
 
         self.gpio_handle = None
         self.current_mode = None  # 'config' or 'power_saving'
+        self._config_led_on = False       # tracks current config LED state to avoid redundant GPIO writes
+        self._last_config_led_flash = 0.0 # timestamp of last config LED flash
 
         # Initialize GPIO
         try:
             self.gpio_handle = lgpio.gpiochip_open(0)
 
-            # Configure reed switch as input with pull-up
-            # When magnet is near: switch closes, pin reads LOW (0)
-            # When magnet is away: switch opens, pin reads HIGH (1)
+            # Configure latch switch as input with internal pull-up
+            # Latched ON (contacts closed): pin reads LOW (0) = config mode
+            # Latched OFF (contacts open):  pin reads HIGH (1) = power saving mode
             lgpio.gpio_claim_input(self.gpio_handle, self.reed_pin, lgpio.SET_PULL_UP)
 
-            # Configure LED as output
+            # Configure config LED as output
             lgpio.gpio_claim_output(self.gpio_handle, self.led_pin)
 
-            logging.info(f"GPIO initialized: Reed switch on GPIO{self.reed_pin}, LED on GPIO{self.led_pin}")
+            logging.info(f"GPIO initialized: Latch switch on GPIO{self.reed_pin}, config LED on GPIO{self.led_pin}")
         except Exception as e:
             logging.error(f"Failed to initialize GPIO: {e}")
             # Cleanup GPIO handle on initialization failure
@@ -93,25 +101,49 @@ class PowerSavingController:
                 self.gpio_handle = None
             raise
 
-    def read_reed_switch(self):
-        """
-        Read reed switch state
-        Returns True if magnet is near (config mode requested)
+    def read_latch_switch(self):
+        """Read the latch switch state.
+
+        Returns True if the switch is latched ON (contacts closed = config mode),
+        False if latched OFF (contacts open = power saving mode).
         """
         try:
-            # Read pin: 0 = magnet near (switch closed), 1 = magnet away (switch open)
+            # Internal pull-up: LOW (0) = contacts closed = ON, HIGH (1) = contacts open = OFF
             pin_state = lgpio.gpio_read(self.gpio_handle, self.reed_pin)
-            return pin_state == 0  # True when magnet is near
+            return pin_state == 0
         except Exception as e:
-            logging.error(f"Failed to read reed switch: {e}")
+            logging.error(f"Failed to read latch switch: {e}")
             return False
 
-    def set_led(self, state):
-        """Set LED state (True = ON, False = OFF)"""
+    def _set_config_led(self, state):
+        """Low-level config LED GPIO write (True = ON, False = OFF).
+
+        Tracks current state in _config_led_on to avoid redundant GPIO writes.
+        """
+        if state == self._config_led_on:
+            return
         try:
             lgpio.gpio_write(self.gpio_handle, self.led_pin, 1 if state else 0)
+            self._config_led_on = state
         except Exception as e:
-            logging.error(f"Failed to set LED: {e}")
+            logging.error(f"Failed to set config LED: {e}")
+
+    def update_config_led(self):
+        """Drive the config mode LED based on current mode.
+
+        Config mode  : solid ON
+        Power saving : brief flash (CONFIG_LED_FLASH_DURATION s) once every
+                       CONFIG_LED_FLASH_INTERVAL s
+        """
+        if self.current_mode == 'config':
+            self._set_config_led(True)
+        elif self.current_mode == 'power_saving':
+            now = time.monotonic()
+            if now - self._last_config_led_flash >= self.CONFIG_LED_FLASH_INTERVAL:
+                self._set_config_led(True)
+                time.sleep(self.CONFIG_LED_FLASH_DURATION)
+                self._set_config_led(False)
+                self._last_config_led_flash = now
 
     def run_command(self, command, check=False):
         """Execute shell command with error handling"""
@@ -129,6 +161,19 @@ class PowerSavingController:
         except Exception as e:
             logging.error(f"Failed to run command '{command}': {e}")
             return False
+
+    def _run_and_get_output(self, command):
+        """Run a shell command and return its stdout, or None on failure."""
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                return result.stdout
+            if result.stderr:
+                logging.warning(f"Command '{command}' returned: {result.stderr.strip()}")
+            return None
+        except Exception as e:
+            logging.error(f"Failed to run command '{command}': {e}")
+            return None
 
     def service_exists(self, service_name):
         """Check if a systemd service exists"""
@@ -172,8 +217,7 @@ class PowerSavingController:
 
         logging.info("Entering power saving mode...")
 
-        # Turn off LED
-        self.set_led(False)
+        self._last_config_led_flash = 0.0  # trigger immediate flash on next update_config_led() call
 
         # Disable WiFi (if enabled in config)
         if self.disable_wifi:
@@ -187,13 +231,8 @@ class PowerSavingController:
                 time.sleep(retry_interval)
 
                 # Check if WiFi is actually off
-                result = subprocess.run(
-                    "nmcli radio wifi",
-                    shell=True,
-                    capture_output=True,
-                    text=True
-                )
-                if result.returncode == 0 and "disabled" in result.stdout.lower():
+                output = self._run_and_get_output("nmcli radio wifi")
+                if output is not None and "disabled" in output.lower():
                     logging.info(f"WiFi successfully disabled (attempt {attempt + 1}/{max_attempts})")
                     break
                 elif attempt < max_attempts - 1:
@@ -281,9 +320,6 @@ class PowerSavingController:
 
         logging.info("Entering configuration mode...")
 
-        # Turn on LED
-        self.set_led(True)
-
         # Enable WiFi (if it was disabled in power saving mode)
         if self.disable_wifi:
             logging.info("Enabling WiFi...")
@@ -368,33 +404,33 @@ class PowerSavingController:
         logging.info("Configuration mode activated")
 
     def run(self):
-        """Main loop - monitor reed switch and manage power modes"""
+        """Main loop - monitor latch switch and manage power modes"""
         logging.info("Power saving controller started")
 
-        # Set initial mode based on reed switch position
-        magnet_present = self.read_reed_switch()
-        if magnet_present:
-            logging.info("Reed switch activated at startup - entering config mode")
-            self.enter_config_mode()
-        else:
-            logging.info("Reed switch not activated - entering power saving mode")
-            self.enter_power_saving_mode()
-
         try:
-            while not self.shutdown_requested:
-                # Check reed switch state
-                magnet_present = self.read_reed_switch()
+            # Set initial mode based on switch position at startup
+            switch_on = self.read_latch_switch()
+            if switch_on:
+                logging.info("Latch switch ON at startup - entering config mode")
+                self.enter_config_mode()
+            else:
+                logging.info("Latch switch OFF at startup - entering power saving mode")
+                self.enter_power_saving_mode()
+            self.update_config_led()
 
-                if magnet_present:
-                    # Magnet detected - enter config mode
+            while not self.shutdown_requested:
+                switch_on = self.read_latch_switch()
+
+                if switch_on:
                     if self.current_mode != 'config':
-                        logging.info("Magnet detected - switching to config mode")
+                        logging.info("Switch ON - switching to config mode")
                         self.enter_config_mode()
                 else:
-                    # No magnet - enter power saving mode
                     if self.current_mode != 'power_saving':
-                        logging.info("Magnet removed - switching to power saving mode")
+                        logging.info("Switch OFF - switching to power saving mode")
                         self.enter_power_saving_mode()
+
+                self.update_config_led()
 
                 time.sleep(self.check_interval)
 
@@ -409,6 +445,7 @@ class PowerSavingController:
         """Clean up GPIO resources"""
         if self.gpio_handle is not None:
             try:
+                self._set_config_led(False)
                 lgpio.gpio_free(self.gpio_handle, self.reed_pin)
                 lgpio.gpio_free(self.gpio_handle, self.led_pin)
                 lgpio.gpiochip_close(self.gpio_handle)
@@ -456,7 +493,7 @@ def main():
         sys.exit(0)  # Exit gracefully
 
     logging.info("Power saving mode is ENABLED")
-    logging.info(f"Reed switch on GPIO {power_saving_config['reed_switch_pin']}")
+    logging.info(f"Latch switch on GPIO {power_saving_config['reed_switch_pin']}")
     logging.info(f"Status LED on GPIO {power_saving_config['led_pin']}")
     logging.info(f"Check interval: {power_saving_config['check_interval']}s")
 
