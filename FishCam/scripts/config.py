@@ -7,6 +7,7 @@ It provides easy access to configuration parameters for all FishCam scripts.
 
 import os
 import sys
+import socket
 from pathlib import Path
 
 # Auto-install PyYAML if not present
@@ -51,8 +52,8 @@ class FishCamConfig:
             raise ValueError(f"Error parsing YAML configuration file: {e}")
 
     def get_fishcam_id(self):
-        """Get FishCam ID"""
-        return self.config.get('fishcam', {}).get('id', 'FishCam_Unknown')
+        """Get FishCam ID from the Pi hostname."""
+        return socket.gethostname()
 
     def get_video_settings(self):
         """

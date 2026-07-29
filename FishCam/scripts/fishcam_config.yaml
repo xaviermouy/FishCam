@@ -1,10 +1,6 @@
 # FishCam Configuration File
 # This file contains all configuration parameters for the FishCam system
 
-# General FishCam Settings
-fishcam:
-  id: "fishcam01"  # Unique identifier for this FishCam unit
-
 # Video Capture Settings
 video:
   duration: 900  # Duration of each video file in seconds
