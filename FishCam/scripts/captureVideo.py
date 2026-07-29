@@ -301,15 +301,14 @@ def main():
     FishCamID = config.get_fishcam_id()
 
     # Get paths from configuration
-    outDir = paths['output_dir']
+    outDir = paths['video_dir']
     logDir = paths['log_dir']
     iterFileName = paths['iterator_file']
     BuzzerEnabled = buzzer_config['enabled']
     BuzzerIterationPeriod = buzzer_config['iteration_period']
 
     # Start logs
-    if os.path.isdir(logDir) == False:
-        os.mkdir(logDir)
+    os.makedirs(logDir, exist_ok=True)
     log_filename = os.path.join(logDir, time.strftime('%Y%m%dT%H%M%S') + '.log')
     logging.basicConfig(
         filename=log_filename,
@@ -318,8 +317,7 @@ def main():
     )
     logging.info('Video acquisition started')
     logging.info(f'FishCam ID: {FishCamID}')
-    if os.path.isdir(outDir) == False:
-        os.mkdir(outDir)
+    os.makedirs(outDir, exist_ok=True)
     try:
         curDir = os.getcwd()  # get current working directory
         # get iteration number

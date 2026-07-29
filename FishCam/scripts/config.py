@@ -118,9 +118,11 @@ class FishCamConfig:
         paths = self.config.get('paths', {})
 
         return {
-            'output_dir': paths.get('output_dir', '../data'),
-            'log_dir': paths.get('log_dir', '../logs'),
-            'iterator_file': paths.get('iterator_file', 'iterator.config')
+            'video_dir':     paths.get('video_dir',  '../data/video'),
+            'log_dir':       paths.get('log_dir',    '../data/logs'),
+            'imu_dir':       paths.get('imu_dir',    '../data/imu'),
+            'gps_dir':       paths.get('gps_dir',    '../data/gps'),
+            'iterator_file': paths.get('iterator_file', 'iterator.config'),
         }
 
     def get_power_saving_settings(self):
@@ -153,6 +155,28 @@ class FishCamConfig:
             'throttle_cpu': components.get('throttle_cpu', True),
             'stop_services': components.get('stop_services', True),
             'disable_led_triggers': components.get('disable_led_triggers', True)
+        }
+
+    def get_imu_settings(self):
+        """
+        Get IMU (BNO085) acquisition settings.
+
+        Returns:
+            dict: IMU settings including enabled flag, I2C address,
+                  sample rate, and per-report enable flags.
+        """
+        imu = self.config.get('imu', {})
+        reports = imu.get('reports', {})
+        return {
+            'enabled':              imu.get('enabled', False),
+            'i2c_address':          imu.get('i2c_address', 0x4A),
+            'sample_rate_hz':       imu.get('sample_rate_hz', 50),
+            'accelerometer':        reports.get('accelerometer', True),
+            'gyroscope':            reports.get('gyroscope', True),
+            'magnetometer':         reports.get('magnetometer', True),
+            'rotation_vector':      reports.get('rotation_vector', True),
+            'linear_acceleration':  reports.get('linear_acceleration', True),
+            'gravity':              reports.get('gravity', True),
         }
 
     def get(self, *keys, default=None):
@@ -224,3 +248,7 @@ def get_paths():
 def get_power_saving_settings():
     """Get power saving mode settings from configuration"""
     return get_config().get_power_saving_settings()
+
+def get_imu_settings():
+    """Get IMU acquisition settings from configuration"""
+    return get_config().get_imu_settings()

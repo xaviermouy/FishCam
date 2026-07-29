@@ -35,8 +35,11 @@ if pgrep -f "powerSavingMode.py" > /dev/null; then
     echo -e "Power Saving Script: ${CHECK} Running"
 
     # Try to determine mode from recent logs
-    if [ -f /home/fishcam/Desktop/FishCam/logs/power_saving.log ]; then
-        LAST_MODE=$(tail -50 /home/fishcam/Desktop/FishCam/logs/power_saving.log | grep -E "(power saving mode activated|Configuration mode activated)" | tail -1)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    LOG_DIR=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import config; print(config.get_paths()['log_dir'])" 2>/dev/null)
+    POWER_SAVING_LOG="$SCRIPT_DIR/$LOG_DIR/power_saving.log"
+    if [ -f "$POWER_SAVING_LOG" ]; then
+        LAST_MODE=$(tail -50 "$POWER_SAVING_LOG" | grep -E "(power saving mode activated|Configuration mode activated)" | tail -1)
         if echo "$LAST_MODE" | grep -q "power saving"; then
             echo -e "Current Mode:        ${GREEN}Power Saving Mode${NC}"
             EXPECTED_MODE="power_saving"

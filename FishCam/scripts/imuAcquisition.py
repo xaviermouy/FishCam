@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+"""
+FishCam IMU Acquisition Script
+
+Continuously records data from the Adafruit BNO085 IMU via I2C and saves
+it to a CSV file in the data directory. Runs as a background process
+alongside video capture.
+
+Hardware (I2C wiring):
+- VIN → 3.3 V  (Pi Pin 1)
+- GND → GND    (Pi Pin 6)
+- SDA → GPIO 2 (Pi Pin 3)
+- SCL → GPIO 3 (Pi Pin 5)
+
+Output CSV columns (enabled reports only):
+- timestamp_unix      : Unix timestamp (s, float)
+- datetime            : ISO-8601 datetime string
+- accel_{x,y,z}_ms2  : Accelerometer (m/s²)
+- gyro_{x,y,z}_rads  : Gyroscope (rad/s)
+- mag_{x,y,z}_uT     : Magnetometer (µT)
+- quat_{i,j,k,real}  : Rotation vector (quaternion, dimensionless)
+- lin_accel_{x,y,z}_ms2 : Linear acceleration without gravity (m/s²)
+- gravity_{x,y,z}_ms2   : Gravity vector (m/s²)
+"""
+
+import board
+import busio
+from adafruit_bno08x import (
+    BNO_REPORT_ACCELEROMETER,
+    BNO_REPORT_GYROSCOPE,
+    BNO_REPORT_MAGNETOMETER,
+    BNO_REPORT_ROTATION_VECTOR,
+    BNO_REPORT_LINEAR_ACCELERATION,
+    BNO_REPORT_GRAVITY,
+)
+from adafruit_bno08x.i2c import BNO08X_I2C
+
+import csv
+import logging
+import signal
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+import config
+
+
+class IMUAcquisition:
+    """Acquires and records IMU data from the BNO085 via I2C."""
+
+    # Number of samples between CSV flushes (limits data loss on power cut)
+    FLUSH_INTERVAL = 50
+
+    def __init__(self, sample_rate_hz, i2c_address,
+                 enable_accelerometer, enable_gyroscope, enable_magnetometer,
+                 enable_rotation_vector, enable_linear_acceleration, enable_gravity,
+                 output_path):
+        self.sample_rate_hz   = sample_rate_hz
+        self.i2c_address      = i2c_address
+        self.enable_accel     = enable_accelerometer
+        self.enable_gyro      = enable_gyroscope
+        self.enable_mag       = enable_magnetometer
+        self.enable_rot       = enable_rotation_vector
+        self.enable_lin_accel = enable_linear_acceleration
+        self.enable_gravity   = enable_gravity
+        self.output_path      = output_path
+
+        self.shutdown_requested = False
+        self._imu = None
+        self._sample_interval = 1.0 / sample_rate_hz
+
+    # ── Setup ──────────────────────────────────────────────────────────────
+
+    def _setup_imu(self):
+        """Initialise I2C bus and BNO085, then enable configured reports."""
+        interval_us = 1_000_000 // self.sample_rate_hz  # µs per sample
+
+        i2c = busio.I2C(board.SCL, board.SDA)
+        self._imu = BNO08X_I2C(i2c, address=self.i2c_address)
+
+        if self.enable_accel:
+            self._imu.enable_feature(BNO_REPORT_ACCELEROMETER,
+                                     report_interval=interval_us)
+        if self.enable_gyro:
+            self._imu.enable_feature(BNO_REPORT_GYROSCOPE,
+                                     report_interval=interval_us)
+        if self.enable_mag:
+            self._imu.enable_feature(BNO_REPORT_MAGNETOMETER,
+                                     report_interval=interval_us)
+        if self.enable_rot:
+            self._imu.enable_feature(BNO_REPORT_ROTATION_VECTOR,
+                                     report_interval=interval_us)
+        if self.enable_lin_accel:
+            self._imu.enable_feature(BNO_REPORT_LINEAR_ACCELERATION,
+                                     report_interval=interval_us)
+        if self.enable_gravity:
+            self._imu.enable_feature(BNO_REPORT_GRAVITY,
+                                     report_interval=interval_us)
+
+        logging.info(f"IMU initialised at I2C address 0x{self.i2c_address:02X}, "
+                     f"sample rate {self.sample_rate_hz} Hz")
+
+    # ── CSV helpers ────────────────────────────────────────────────────────
+
+    def _build_header(self):
+        """Return ordered list of CSV column names for enabled reports."""
+        cols = ['timestamp_unix', 'datetime']
+        if self.enable_accel:
+            cols += ['accel_x_ms2', 'accel_y_ms2', 'accel_z_ms2']
+        if self.enable_gyro:
+            cols += ['gyro_x_rads', 'gyro_y_rads', 'gyro_z_rads']
+        if self.enable_mag:
+            cols += ['mag_x_uT', 'mag_y_uT', 'mag_z_uT']
+        if self.enable_rot:
+            cols += ['quat_i', 'quat_j', 'quat_k', 'quat_real']
+        if self.enable_lin_accel:
+            cols += ['lin_accel_x_ms2', 'lin_accel_y_ms2', 'lin_accel_z_ms2']
+        if self.enable_gravity:
+            cols += ['gravity_x_ms2', 'gravity_y_ms2', 'gravity_z_ms2']
+        return cols
+
+    # ── Sample reading ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _fmt(value):
+        """Format a float to 6 decimal places, or empty string if None."""
+        return f'{value:.6f}' if value is not None else ''
+
+    def _read_sample(self):
+        """Read one sample from all enabled reports. Returns a dict."""
+        now = time.time()
+        row = {
+            'timestamp_unix': f'{now:.6f}',
+            'datetime': datetime.now().astimezone().strftime('%Y%m%dT%H%M%S.%f%z'),
+        }
+
+        if self.enable_accel:
+            val = self._imu.acceleration  # (x, y, z) m/s² or None
+            x, y, z = val if val is not None else (None, None, None)
+            row['accel_x_ms2'] = self._fmt(x)
+            row['accel_y_ms2'] = self._fmt(y)
+            row['accel_z_ms2'] = self._fmt(z)
+
+        if self.enable_gyro:
+            val = self._imu.gyro          # (x, y, z) rad/s or None
+            x, y, z = val if val is not None else (None, None, None)
+            row['gyro_x_rads'] = self._fmt(x)
+            row['gyro_y_rads'] = self._fmt(y)
+            row['gyro_z_rads'] = self._fmt(z)
+
+        if self.enable_mag:
+            val = self._imu.magnetic      # (x, y, z) µT or None
+            x, y, z = val if val is not None else (None, None, None)
+            row['mag_x_uT'] = self._fmt(x)
+            row['mag_y_uT'] = self._fmt(y)
+            row['mag_z_uT'] = self._fmt(z)
+
+        if self.enable_rot:
+            val = self._imu.quaternion    # (i, j, k, real) or None
+            i, j, k, r = val if val is not None else (None, None, None, None)
+            row['quat_i']    = self._fmt(i)
+            row['quat_j']    = self._fmt(j)
+            row['quat_k']    = self._fmt(k)
+            row['quat_real'] = self._fmt(r)
+
+        if self.enable_lin_accel:
+            val = self._imu.linear_acceleration  # (x, y, z) m/s² or None
+            x, y, z = val if val is not None else (None, None, None)
+            row['lin_accel_x_ms2'] = self._fmt(x)
+            row['lin_accel_y_ms2'] = self._fmt(y)
+            row['lin_accel_z_ms2'] = self._fmt(z)
+
+        if self.enable_gravity:
+            val = self._imu.gravity       # (x, y, z) m/s² or None
+            x, y, z = val if val is not None else (None, None, None)
+            row['gravity_x_ms2'] = self._fmt(x)
+            row['gravity_y_ms2'] = self._fmt(y)
+            row['gravity_z_ms2'] = self._fmt(z)
+
+        return row
+
+    # ── Main loop ──────────────────────────────────────────────────────────
+
+    def run(self):
+        """Set up the IMU then loop, writing one CSV row per sample."""
+        logging.info("Setting up IMU...")
+        self._setup_imu()
+
+        header = self._build_header()
+        logging.info(f"Opening IMU data file: {self.output_path}")
+
+        with open(self.output_path, 'w', newline='') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=header)
+            writer.writeheader()
+            csv_file.flush()
+
+            logging.info("IMU acquisition started")
+            sample_count = 0
+
+            while not self.shutdown_requested:
+                loop_start = time.monotonic()
+
+                try:
+                    row = self._read_sample()
+                    writer.writerow(row)
+                    sample_count += 1
+
+                    # Periodic flush to limit data loss on power cut
+                    if sample_count % self.FLUSH_INTERVAL == 0:
+                        csv_file.flush()
+
+                except Exception as e:
+                    logging.error(f"Failed to read IMU sample: {e}")
+
+                # Sleep for the remainder of the sample interval
+                elapsed = time.monotonic() - loop_start
+                remaining = self._sample_interval - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
+
+        logging.info("IMU acquisition stopped")
+
+    # ── Signal handling ────────────────────────────────────────────────────
+
+    def signal_handler(self, signum, frame):
+        """Handle shutdown signals gracefully."""
+        logging.info(f"Received signal {signum}, shutting down...")
+        self.shutdown_requested = True
+
+
+# ── Entry point ────────────────────────────────────────────────────────────
+
+def main():
+    # Setup logging
+    log_dir = Path(__file__).parent / config.get_paths()['log_dir']
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / 'imu_acquisition.log'
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(sys.stdout),
+        ]
+    )
+
+    logging.info('=' * 60)
+    logging.info('FishCam IMU Acquisition')
+    logging.info('=' * 60)
+
+    # Load configuration
+    try:
+        imu_cfg = config.get_imu_settings()
+    except Exception as e:
+        logging.error(f"Failed to load configuration: {e}")
+        sys.exit(1)
+
+    if not imu_cfg['enabled']:
+        logging.info("IMU acquisition is DISABLED in configuration")
+        logging.info("To enable: set 'imu.enabled: true' in fishcam_config.yaml")
+        sys.exit(0)
+
+    # Build output file path: ../data/imu/{fishcam_id}_{timestamp}_imu.csv
+    paths    = config.get_paths()
+    data_dir = Path(__file__).parent / paths['imu_dir']
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    fishcam_id = config.get_fishcam_id()
+    timestamp  = datetime.now().strftime('%Y%m%dT%H%M%S')
+    csv_path   = data_dir / f'{fishcam_id}_{timestamp}_imu.csv'
+
+    # Log startup configuration
+    logging.info("IMU acquisition ENABLED")
+    logging.info(f"I2C address  : 0x{imu_cfg['i2c_address']:02X}")
+    logging.info(f"Sample rate  : {imu_cfg['sample_rate_hz']} Hz")
+    logging.info(f"Output file  : {csv_path}")
+    logging.info("Enabled reports:")
+    for report in ('accelerometer', 'gyroscope', 'magnetometer',
+                   'rotation_vector', 'linear_acceleration', 'gravity'):
+        logging.info(f"  {report}: {imu_cfg[report]}")
+
+    acquisition = IMUAcquisition(
+        sample_rate_hz         = imu_cfg['sample_rate_hz'],
+        i2c_address            = imu_cfg['i2c_address'],
+        enable_accelerometer   = imu_cfg['accelerometer'],
+        enable_gyroscope       = imu_cfg['gyroscope'],
+        enable_magnetometer    = imu_cfg['magnetometer'],
+        enable_rotation_vector = imu_cfg['rotation_vector'],
+        enable_linear_acceleration = imu_cfg['linear_acceleration'],
+        enable_gravity         = imu_cfg['gravity'],
+        output_path            = csv_path,
+    )
+
+    signal.signal(signal.SIGTERM, acquisition.signal_handler)
+    signal.signal(signal.SIGINT,  acquisition.signal_handler)
+    logging.info("Signal handlers registered")
+
+    acquisition.run()
+
+
+if __name__ == '__main__':
+    main()

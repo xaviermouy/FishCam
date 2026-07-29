@@ -82,9 +82,28 @@ power_saving:
     stop_services: true  # Stop non-essential services (~10-20 mA savings)
     disable_led_triggers: false  # Disable activity LED triggers (minimal savings)
 
+# IMU Settings (Adafruit BNO085 via I2C)
+# Wiring: VIN→3.3V (Pin 1), GND→GND (Pin 6), SDA→GPIO2 (Pin 3), SCL→GPIO3 (Pin 5)
+# Data volume: ~47 MB/hour at 50 Hz with all reports enabled
+imu:
+  enabled: false                 # Enable/disable IMU data acquisition
+  i2c_address: 0x4A             # I2C address (0x4A default, 0x4B if ADDR pin is high)
+  sample_rate_hz: 10            # Sampling rate in Hz (max depends on report type)
+
+  # Sensor reports to record (disable unused ones to reduce file size)
+  reports:
+    accelerometer: true          # Raw accelerometer (m/s²)
+    gyroscope: true              # Gyroscope (rad/s)
+    magnetometer: true           # Magnetometer (µT)
+    rotation_vector: true        # Fused orientation as quaternion (i, j, k, real)
+    linear_acceleration: true    # Acceleration with gravity removed (m/s²)
+    gravity: true                # Gravity vector (m/s²)
+
 # File Paths and Directories
 paths:
-  output_dir: '../data'  # Directory for output video files
-  log_dir: '../logs'  # Directory for log files
+  video_dir: '../data/video'   # Directory for video files
+  log_dir: '../data/logs'     # Directory for log files
+  imu_dir: '../data/imu'      # Directory for IMU CSV files
+  gps_dir: '../data/gps'      # Directory for GPS files (future)
   iterator_file: 'iterator.config'  # Filename for iteration counter
   config_file: 'fishcam_config.yaml'  # This configuration file

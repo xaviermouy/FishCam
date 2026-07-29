@@ -39,7 +39,8 @@ def playBeepSequence(chip, buzzer_pin, beep_dur_sec, beep_gap_sec, beep_number):
 
 # Load configuration
 buzzer_config = config.get_buzzer_settings()
-fishcam_config = config.get_fishcam_settings()
+# buzzer_utils expects a dict with an 'id' key; use the hostname as the FishCam ID
+fishcam_config = {'id': config.get_fishcam_id()}
 
 # Get common settings
 buzzer_pin = buzzer_config['pin']

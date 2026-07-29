@@ -461,8 +461,8 @@ class PowerSavingController:
 
 def main():
     # Setup logging
-    log_dir = Path(__file__).parent.parent / 'logs'
-    log_dir.mkdir(exist_ok=True)
+    log_dir = Path(__file__).parent / config.get_paths()['log_dir']
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / 'power_saving.log'
 
     logging.basicConfig(

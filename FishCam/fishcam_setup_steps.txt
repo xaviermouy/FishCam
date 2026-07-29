@@ -25,6 +25,13 @@ System > Boot to CLI
 System > Change hostname to fishcam01
 System > splash screen off
 
+# setup IMU
+- pip install adafruit-blinka   # must be installed first                                                                                                                                                                                                                                                                           pip install adafruit-circuitpython-bno08x
+- pip install adafruit-circuitpython-bno08x
+- Enable I2C: Interface Options → I2C → Enable
+- confirm the BNO085 is detected:
+  sudo i2cdetect -y 1  # Should show 0x4A on the grid
+
 5- Setup cron job:
 crontab -e
 @reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/camStartup.sh &
