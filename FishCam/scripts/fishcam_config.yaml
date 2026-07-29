@@ -56,7 +56,7 @@ buzzer:
 
 # Power Saving Mode Settings
 power_saving:
-  enabled: false  # Enable(true)/disable(false) power saving mode (requires reed switch hardware)
+  enabled: true  # Enable(true)/disable(false) power saving mode (requires reed switch hardware)
   reed_switch_pin: 24  # GPIO pin for reed switch (BCM numbering, right side of Pi)
   led_pin: 23  # GPIO pin for status LED (BCM numbering, right side of Pi)
   check_interval: 2.0  # How often to check reed switch state (seconds)

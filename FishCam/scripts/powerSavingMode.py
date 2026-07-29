@@ -202,7 +202,7 @@ class PowerSavingController:
         # Use nmcli to connect to WiFi with explicit security type
         # This will add the network if it doesn't exist, or connect if it does
         result = self.run_command(
-            f"nmcli device wifi connect \"{self.wifi_ssid}\" password \"{self.wifi_password}\" wpa-psk"
+            f"nmcli device wifi connect \"{self.wifi_ssid}\" password \"{self.wifi_password}\""
         )
 
         if result:

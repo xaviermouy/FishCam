@@ -3,10 +3,10 @@
 # This script is executed on boot via cron job
 
 # Initial delay to let system stabilize
-sleep 30
+sleep 10
 
 # Resolve script directory so this works regardless of where cron calls it from
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Read data/log directory paths from fishcam_config.yaml via config.py
@@ -41,7 +41,7 @@ try:
     if not power_saving_enabled and wifi_auto_connect and wifi_ssid and wifi_password:
         print(f"Power saving disabled - connecting to WiFi: {wifi_ssid}")
         result = subprocess.run(
-            f'nmcli device wifi connect "{wifi_ssid}" password "{wifi_password}" wpa-psk',
+            f'nmcli device wifi connect "{wifi_ssid}" password "{wifi_password}"',
             shell=True,
             capture_output=True,
             text=True
