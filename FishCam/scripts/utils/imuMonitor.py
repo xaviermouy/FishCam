@@ -67,26 +67,38 @@ def fmt_angle(value, width=7, decimals=1):
 
 # ── IMU setup ──────────────────────────────────────────────────────────────────
 
-def setup_imu(imu_cfg):
-    """Initialise I2C bus and BNO085, enabling all configured reports."""
+def setup_imu(imu_cfg, max_attempts=5, retry_delay=2.0):
+    """Initialise I2C bus and BNO085, enabling all configured reports.
+
+    Retries several times with a delay to handle BNO085 cold-start timing —
+    the sensor needs a moment after power-on before it accepts feature commands.
+    """
     interval_us = 1_000_000 // imu_cfg['sample_rate_hz']
     i2c = busio.I2C(board.SCL, board.SDA)
-    imu = BNO08X_I2C(i2c, address=imu_cfg['i2c_address'])
 
-    if imu_cfg['accelerometer']:
-        imu.enable_feature(BNO_REPORT_ACCELEROMETER,      report_interval=interval_us)
-    if imu_cfg['gyroscope']:
-        imu.enable_feature(BNO_REPORT_GYROSCOPE,          report_interval=interval_us)
-    if imu_cfg['magnetometer']:
-        imu.enable_feature(BNO_REPORT_MAGNETOMETER,       report_interval=interval_us)
-    if imu_cfg['rotation_vector']:
-        imu.enable_feature(BNO_REPORT_ROTATION_VECTOR,    report_interval=interval_us)
-    if imu_cfg['linear_acceleration']:
-        imu.enable_feature(BNO_REPORT_LINEAR_ACCELERATION, report_interval=interval_us)
-    if imu_cfg['gravity']:
-        imu.enable_feature(BNO_REPORT_GRAVITY,            report_interval=interval_us)
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            imu = BNO08X_I2C(i2c, address=imu_cfg['i2c_address'])
+            if imu_cfg['accelerometer']:
+                imu.enable_feature(BNO_REPORT_ACCELEROMETER,       report_interval=interval_us)
+            if imu_cfg['gyroscope']:
+                imu.enable_feature(BNO_REPORT_GYROSCOPE,           report_interval=interval_us)
+            if imu_cfg['magnetometer']:
+                imu.enable_feature(BNO_REPORT_MAGNETOMETER,        report_interval=interval_us)
+            if imu_cfg['rotation_vector']:
+                imu.enable_feature(BNO_REPORT_ROTATION_VECTOR,     report_interval=interval_us)
+            if imu_cfg['linear_acceleration']:
+                imu.enable_feature(BNO_REPORT_LINEAR_ACCELERATION, report_interval=interval_us)
+            if imu_cfg['gravity']:
+                imu.enable_feature(BNO_REPORT_GRAVITY,             report_interval=interval_us)
+            return imu
+        except Exception as e:
+            last_error = e
+            print(f"IMU init attempt {attempt}/{max_attempts} failed: {e} — retrying in {retry_delay}s...")
+            time.sleep(retry_delay)
 
-    return imu
+    raise RuntimeError(f"IMU failed to initialise after {max_attempts} attempts: {last_error}")
 
 
 # ── Display ────────────────────────────────────────────────────────────────────
@@ -197,6 +209,9 @@ def run_monitor(stdscr, imu, imu_cfg):
     hz_window_count = 0
     actual_hz       = 0.0
 
+    DISPLAY_INTERVAL = 0.5   # refresh display at 2 Hz — reading is continuous
+    last_display     = 0.0
+
     while True:
         loop_start = time.monotonic()
 
@@ -205,32 +220,32 @@ def run_monitor(stdscr, imu, imu_cfg):
         if key in (ord('q'), ord('Q'), 27):
             break
 
-        # Drain all pending packets so the display shows current data
-        # and the I2C buffer doesn't back up (6 reports × 10 Hz = 60 pkts/s)
+        # Continuously drain packets — keeps the I2C buffer clear and values fresh.
+        # Reading faster than the display rate prevents the BNO085 buffer from backing up.
         try:
             imu._process_available_pkts()
         except Exception:
             pass
 
-        try:
-            draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz)
-            sample_count    += 1
-            hz_window_count += 1
-        except Exception:
-            pass  # ignore transient read errors — next frame will recover
+        # Refresh the display at a lower rate to avoid blocking on I2C during draw()
+        now = time.monotonic()
+        if now - last_display >= DISPLAY_INTERVAL:
+            try:
+                draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz)
+                sample_count    += 1
+                hz_window_count += 1
+            except Exception:
+                pass  # ignore transient read errors — next frame will recover
+            last_display = now
 
         # Update displayed Hz once per second
-        now = time.monotonic()
         if now - hz_window_start >= 1.0:
             actual_hz       = hz_window_count / (now - hz_window_start)
             hz_window_count = 0
             hz_window_start = now
 
-        # Sleep for remainder of sample interval
-        elapsed   = time.monotonic() - loop_start
-        remaining = interval - elapsed
-        if remaining > 0:
-            time.sleep(remaining)
+        # Short sleep to avoid busy-spinning while still draining packets promptly
+        time.sleep(0.01)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────

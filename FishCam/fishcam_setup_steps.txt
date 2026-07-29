@@ -47,7 +47,7 @@ System > splash screen off
 	sudo reboot
 
 	To verify the baudrate was applied after reboot:
-	cat /sys/class/i2c-adapter/i2c-1/of_node/clock-frequency | xxd
+	grep -r baudrate /boot/firmware/config.txt
 	Should show 000186a0 which is 100000 in hex.
 
 
@@ -56,7 +56,7 @@ crontab -e
 @reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/camStartup.sh &
 Save the changes by pressing CTRL+O, then press Enter to confirm.
 Exit Nano by pressing CTRL+X
-Verify that the schedule has been saved: sudo crontab -l
+Verify that the schedule has been saved: crontab -l
 
 6- Mark fishcam number on SD card (with sharpie)
 
