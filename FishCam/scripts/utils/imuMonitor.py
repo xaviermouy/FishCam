@@ -209,9 +209,6 @@ def run_monitor(stdscr, imu, imu_cfg):
     hz_window_count = 0
     actual_hz       = 0.0
 
-    DISPLAY_INTERVAL = 0.5   # refresh display at 2 Hz — reading is continuous
-    last_display     = 0.0
-
     while True:
         loop_start = time.monotonic()
 
@@ -220,32 +217,25 @@ def run_monitor(stdscr, imu, imu_cfg):
         if key in (ord('q'), ord('Q'), 27):
             break
 
-        # Continuously drain packets — keeps the I2C buffer clear and values fresh.
-        # Reading faster than the display rate prevents the BNO085 buffer from backing up.
         try:
-            imu._process_available_pkts()
+            draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz)
+            sample_count    += 1
+            hz_window_count += 1
         except Exception:
-            pass
-
-        # Refresh the display at a lower rate to avoid blocking on I2C during draw()
-        now = time.monotonic()
-        if now - last_display >= DISPLAY_INTERVAL:
-            try:
-                draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz)
-                sample_count    += 1
-                hz_window_count += 1
-            except Exception:
-                pass  # ignore transient read errors — next frame will recover
-            last_display = now
+            pass  # ignore transient read errors — next frame will recover
 
         # Update displayed Hz once per second
+        now = time.monotonic()
         if now - hz_window_start >= 1.0:
             actual_hz       = hz_window_count / (now - hz_window_start)
             hz_window_count = 0
             hz_window_start = now
 
-        # Short sleep to avoid busy-spinning while still draining packets promptly
-        time.sleep(0.01)
+        # Sleep for remainder of sample interval
+        elapsed   = time.monotonic() - loop_start
+        remaining = interval - elapsed
+        if remaining > 0:
+            time.sleep(remaining)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────

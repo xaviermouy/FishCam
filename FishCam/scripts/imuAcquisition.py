@@ -72,34 +72,47 @@ class IMUAcquisition:
 
     # ── Setup ──────────────────────────────────────────────────────────────
 
-    def _setup_imu(self):
-        """Initialise I2C bus and BNO085, then enable configured reports."""
+    def _setup_imu(self, max_attempts=5, retry_delay=2.0):
+        """Initialise I2C bus and BNO085, then enable configured reports.
+
+        Retries several times with a delay to handle BNO085 cold-start timing —
+        the sensor needs a moment after power-on before it accepts feature commands.
+        """
         interval_us = 1_000_000 // self.sample_rate_hz  # µs per sample
-
         i2c = busio.I2C(board.SCL, board.SDA)
-        self._imu = BNO08X_I2C(i2c, address=self.i2c_address)
 
-        if self.enable_accel:
-            self._imu.enable_feature(BNO_REPORT_ACCELEROMETER,
-                                     report_interval=interval_us)
-        if self.enable_gyro:
-            self._imu.enable_feature(BNO_REPORT_GYROSCOPE,
-                                     report_interval=interval_us)
-        if self.enable_mag:
-            self._imu.enable_feature(BNO_REPORT_MAGNETOMETER,
-                                     report_interval=interval_us)
-        if self.enable_rot:
-            self._imu.enable_feature(BNO_REPORT_ROTATION_VECTOR,
-                                     report_interval=interval_us)
-        if self.enable_lin_accel:
-            self._imu.enable_feature(BNO_REPORT_LINEAR_ACCELERATION,
-                                     report_interval=interval_us)
-        if self.enable_gravity:
-            self._imu.enable_feature(BNO_REPORT_GRAVITY,
-                                     report_interval=interval_us)
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self._imu = BNO08X_I2C(i2c, address=self.i2c_address)
+                if self.enable_accel:
+                    self._imu.enable_feature(BNO_REPORT_ACCELEROMETER,
+                                             report_interval=interval_us)
+                if self.enable_gyro:
+                    self._imu.enable_feature(BNO_REPORT_GYROSCOPE,
+                                             report_interval=interval_us)
+                if self.enable_mag:
+                    self._imu.enable_feature(BNO_REPORT_MAGNETOMETER,
+                                             report_interval=interval_us)
+                if self.enable_rot:
+                    self._imu.enable_feature(BNO_REPORT_ROTATION_VECTOR,
+                                             report_interval=interval_us)
+                if self.enable_lin_accel:
+                    self._imu.enable_feature(BNO_REPORT_LINEAR_ACCELERATION,
+                                             report_interval=interval_us)
+                if self.enable_gravity:
+                    self._imu.enable_feature(BNO_REPORT_GRAVITY,
+                                             report_interval=interval_us)
+                logging.info(f"IMU initialised at I2C address 0x{self.i2c_address:02X}, "
+                             f"sample rate {self.sample_rate_hz} Hz")
+                return
+            except Exception as e:
+                last_error = e
+                logging.warning(f"IMU init attempt {attempt}/{max_attempts} failed: {e} "
+                                f"— retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
 
-        logging.info(f"IMU initialised at I2C address 0x{self.i2c_address:02X}, "
-                     f"sample rate {self.sample_rate_hz} Hz")
+        raise RuntimeError(f"IMU failed to initialise after {max_attempts} attempts: {last_error}")
 
     # ── CSV helpers ────────────────────────────────────────────────────────
 
