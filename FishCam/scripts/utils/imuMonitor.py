@@ -205,6 +205,13 @@ def run_monitor(stdscr, imu, imu_cfg):
         if key in (ord('q'), ord('Q'), 27):
             break
 
+        # Drain all pending packets so the display shows current data
+        # and the I2C buffer doesn't back up (6 reports × 10 Hz = 60 pkts/s)
+        try:
+            imu._process_available_pkts()
+        except Exception:
+            pass
+
         try:
             draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz)
             sample_count    += 1

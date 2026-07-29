@@ -28,9 +28,28 @@ System > splash screen off
 # setup IMU
 - pip install adafruit-blinka   # must be installed first                                                                                                                                                                                                                                                                           pip install adafruit-circuitpython-bno08x
 - pip install adafruit-circuitpython-bno08x
+  If you get a "externally managed environment" warning (common on newer Raspberry Pi OS), add --break-system-packages: 
+  pip install --break-system-packages adafruit-blinka
+  pip install --break-system-packages adafruit-circuitpython-bno08x
+
 - Enable I2C: Interface Options → I2C → Enable
 - confirm the BNO085 is detected:
   sudo i2cdetect -y 1  # Should show 0x4A on the grid
+  
+- Lower baud rate (from 400kHz to 100kHz)
+	sudo nano /boot/firmware/config.txt                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
+	Find the line:                                                                                                                                                                                                                                                                                                    
+	dtparam=i2c_arm=on                                                                                                                                                                                                                                                                                                   
+	Change it to:                                                                                                                                                                                                                                                                                                       dtparam=i2c_arm=on,i2c_arm_baudrate=100000
+	dtparam=i2c_arm=on,i2c_arm_baudrate=100000
+
+    Save (Ctrl+O, Enter, Ctrl+X), then reboot:
+	sudo reboot
+
+	To verify the baudrate was applied after reboot:
+	cat /sys/class/i2c-adapter/i2c-1/of_node/clock-frequency | xxd
+	Should show 000186a0 which is 100000 in hex.
+
 
 5- Setup cron job:
 crontab -e
@@ -40,6 +59,9 @@ Exit Nano by pressing CTRL+X
 Verify that the schedule has been saved: sudo crontab -l
 
 6- Mark fishcam number on SD card (with sharpie)
+
+7- change ownership of fishcam flder to avoid permission issues:
+sudo chown -R fishcam:fishcam /home/fishcam/Desktop/FishCam/
 
 --------- TO DO FOR EACH FISHCAM EVEN WHEN USING THE FISHCAM SD-CARD IMAGE ---------
 
