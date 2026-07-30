@@ -14,7 +14,7 @@ VIDEO_DIR=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import con
 LOG_DIR=$(python3   -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import config; print(config.get_paths()['log_dir'])")
 IMU_DIR=$(python3   -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import config; print(config.get_paths()['imu_dir'])")
 GPS_DIR=$(python3   -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import config; print(config.get_paths()['gps_dir'])")
-WITTYPI_DIR=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import config; print(config.get_wittypi_settings()['log_dir'])" 2>/dev/null)
+WITTYPI_DIR=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import config; print(config.get_wittypi_settings()['install_dir'])" 2>/dev/null)
 
 # Guard: abort if config failed to load (empty paths would create wrong directories)
 if [ -z "$LOG_DIR" ] || [ -z "$VIDEO_DIR" ]; then

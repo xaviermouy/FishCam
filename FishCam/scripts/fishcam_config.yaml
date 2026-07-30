@@ -97,7 +97,41 @@ imu:
 
 # WittyPi Settings
 wittypi:
-  log_dir: '/home/fishcam/wittypi'  # Directory containing wittypi.log and schedule.log
+  install_dir: '/home/fishcam/wittypi'  # WittyPi installation directory (scripts + logs)
+  i2c_address: 0x08                     # WittyPi v4 mini fixed I2C address
+  power_cut_delay_sec: 60               # seconds WittyPi waits after SIGTERM before hard power cut
+                                        # must be long enough for a clean Pi shutdown (~15s) + margin
+
+  # Voltage protection — set both to 0 to disable (e.g. mains-powered units)
+  low_voltage_cutoff_v: 0              # hard power cut if Vin drops below this (e.g. 5.8 for LiPo)
+  recovery_voltage_v: 0               # won't power on again until Vin exceeds this (e.g. 6.2)
+
+  # Deployment timezone — Pi must always run UTC; times below are in this local timezone.
+  # Must be a valid IANA timezone name (e.g. "America/Vancouver", "Pacific/Auckland").
+  # Run configure_wittypi.py for validation — it will suggest the closest name if unrecognized.
+  timezone: "America/Vancouver"
+
+  # Deployment window (local time in the timezone above)
+  deployment:
+    start: "2026-08-01 06:00:00"
+    end:   "2026-09-30 23:59:59"
+
+  # Daily power cycle
+  # anchor_time: local time of day where the 24-hour sequence restarts each day
+  # windows: must sum to exactly 24 hours
+  # on_min/off_min: duration of each ON and OFF period within the window
+  # Set off_min: 0 for continuous recording during a window
+  daily_schedule:
+    anchor_time: "06:00"
+    windows:
+      - name: "daytime"
+        duration_hours: 14             # 06:00 → 20:00 local
+        on_min: 15
+        off_min: 45
+      - name: "nighttime"
+        duration_hours: 10             # 20:00 → 06:00 local
+        on_min: 5
+        off_min: 115
 
 # File Paths and Directories
 paths:

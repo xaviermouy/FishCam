@@ -101,11 +101,27 @@ class FishCamConfig:
         Get WittyPi settings.
 
         Returns:
-            dict: WittyPi settings (log_dir path)
+            dict: Full WittyPi configuration including schedule, deployment window,
+                  voltage thresholds, and power-cut delay.
         """
         wittypi = self.config.get('wittypi', {})
+        deployment = wittypi.get('deployment', {})
+        schedule   = wittypi.get('daily_schedule', {})
         return {
-            'log_dir': wittypi.get('log_dir', '/home/fishcam/wittypi'),
+            'install_dir':          wittypi.get('install_dir', '/home/fishcam/wittypi'),
+            'i2c_address':          wittypi.get('i2c_address', 0x08),
+            'power_cut_delay_sec':  wittypi.get('power_cut_delay_sec', 60),
+            'low_voltage_cutoff_v': wittypi.get('low_voltage_cutoff_v', 0),
+            'recovery_voltage_v':   wittypi.get('recovery_voltage_v', 0),
+            'timezone':             wittypi.get('timezone', 'UTC'),
+            'deployment': {
+                'start': deployment.get('start', ''),
+                'end':   deployment.get('end',   ''),
+            },
+            'daily_schedule': {
+                'anchor_time': schedule.get('anchor_time', '00:00'),
+                'windows':     schedule.get('windows', []),
+            },
         }
 
     def get_network_settings(self):
