@@ -83,7 +83,13 @@ class IMUAcquisition:
 
         self.shutdown_requested = False
         self._imu = None
+        self._i2c = None
         self._sample_interval = 1.0 / sample_rate_hz
+
+    # Errors that indicate an I2C bus or sensor crash requiring reinitialisation
+    _CRASH_ERRORS = ('Unprocessable Batch bytes', '[Errno 5]', 'Input/output error')
+    # Reinit after this many consecutive errors even if none are crash-type
+    _MAX_CONSECUTIVE_ERRORS = 3
 
     # ── Setup ──────────────────────────────────────────────────────────────
 
@@ -95,13 +101,13 @@ class IMUAcquisition:
         so persistent hardware failures are visible in the log.
         """
         interval_us = int(1_000_000 / self.sample_rate_hz)  # µs per sample
-        i2c = busio.I2C(board.SCL, board.SDA)
+        self._i2c = busio.I2C(board.SCL, board.SDA)
 
         attempt = 0
         while not self.shutdown_requested:
             attempt += 1
             try:
-                self._imu = BNO08X_I2C(i2c, address=self.i2c_address)
+                self._imu = BNO08X_I2C(self._i2c, address=self.i2c_address)
                 if self.enable_accel:
                     self._imu.enable_feature(BNO_REPORT_ACCELEROMETER,
                                              report_interval=interval_us)
@@ -132,6 +138,31 @@ class IMUAcquisition:
                     logging.warning(f"IMU init attempt {attempt} failed: {e} "
                                     f"— retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
+
+    def _is_crash_error(self, e):
+        """Return True if the error signals an I2C bus or sensor crash."""
+        err_str = str(e)
+        return any(marker in err_str for marker in self._CRASH_ERRORS)
+
+    def _reinit_imu(self, recovery_delay=5.0):
+        """Tear down the I2C bus and reinitialise the IMU after a crash.
+
+        A hard deinit of the busio.I2C object releases the kernel I2C driver
+        lock, allowing the bus to recover from a stuck-low or corrupted state.
+        """
+        logging.warning("IMU crash detected — tearing down I2C bus for recovery...")
+        try:
+            if self._i2c is not None:
+                self._i2c.deinit()
+                self._i2c = None
+        except Exception as e:
+            logging.warning(f"Error during I2C deinit (ignoring): {e}")
+
+        logging.info(f"Waiting {recovery_delay}s for sensor to power-cycle and settle...")
+        time.sleep(recovery_delay)
+
+        self._setup_imu()
+        logging.info("IMU recovery complete — resuming acquisition")
 
     # ── CSV helpers ────────────────────────────────────────────────────────
 
@@ -239,6 +270,7 @@ class IMUAcquisition:
 
             logging.info("IMU acquisition started")
             sample_count = 0
+            consecutive_errors = 0
 
             while not self.shutdown_requested:
                 loop_start = time.monotonic()
@@ -247,13 +279,21 @@ class IMUAcquisition:
                     row = self._read_sample()
                     writer.writerow(row)
                     sample_count += 1
+                    consecutive_errors = 0  # reset on successful read
 
                     # Periodic flush to limit data loss on power cut
                     if sample_count % self.FLUSH_INTERVAL == 0:
                         csv_file.flush()
 
                 except Exception as e:
-                    logging.error(f"Failed to read IMU sample: {e}")
+                    consecutive_errors += 1
+                    is_crash = self._is_crash_error(e)
+                    logging.error(f"Failed to read IMU sample "
+                                  f"(consecutive: {consecutive_errors}): {e}")
+
+                    if is_crash or consecutive_errors >= self._MAX_CONSECUTIVE_ERRORS:
+                        consecutive_errors = 0
+                        self._reinit_imu()
 
                 # Sleep for the remainder of the sample interval
                 elapsed = time.monotonic() - loop_start

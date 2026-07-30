@@ -92,12 +92,12 @@ imu:
 
   # Sensor reports to record (disable unused ones to reduce file size)
   reports:
-    accelerometer: true          # Raw accelerometer (m/s²)
-    gyroscope: true              # Gyroscope (rad/s)
-    magnetometer: true           # Magnetometer (µT)
+    accelerometer: false         # Raw accelerometer (m/s²)
+    gyroscope: false             # Gyroscope (rad/s)
+    magnetometer: false          # Magnetometer (µT)
     rotation_vector: true        # Fused orientation as quaternion (i, j, k, real)
-    linear_acceleration: true    # Acceleration with gravity removed (m/s²)
-    gravity: true                # Gravity vector (m/s²)
+    linear_acceleration: false   # Acceleration with gravity removed (m/s²)
+    gravity: false               # Gravity vector (m/s²)
 
 # File Paths and Directories
 paths:

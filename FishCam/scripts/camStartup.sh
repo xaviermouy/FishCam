@@ -18,6 +18,13 @@ GPS_DIR=$(python3   -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import con
 # Create data subdirectories
 mkdir -p "$VIDEO_DIR" "$LOG_DIR" "$IMU_DIR" "$GPS_DIR"
 
+# Save the previous boot's kernel journal log before it gets rotated out.
+# This captures OS-level events (OOM kills, I2C errors, kernel panics, watchdog resets)
+# that explain unexpected reboots and are not visible in FishCam application logs.
+JOURNAL_LOG="$LOG_DIR/journal_$(hostname)_$(date +%Y%m%dT%H%M%S).log"
+journalctl -b -1 -k --no-pager > "$JOURNAL_LOG" 2>/dev/null
+echo "Previous boot kernel journal saved: $JOURNAL_LOG"
+
 # Auto-connect to WiFi if configured AND power saving mode is disabled
 # If power saving is enabled, powerSavingMode.py will handle WiFi based on reed switch
 echo "Checking WiFi auto-connect configuration..."

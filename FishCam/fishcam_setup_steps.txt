@@ -63,6 +63,14 @@ Verify that the schedule has been saved: crontab -l
 7- change ownership of fishcam flder to avoid permission issues:
 sudo chown -R fishcam:fishcam /home/fishcam/Desktop/FishCam/
 
+
+8-Save the system journal across reboots (persistent logging)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+  By default, the journal is stored in RAM and lost on reboot. Enable persistent storage:                                                                                                                                                                                                                              
+  sudo mkdir -p /var/log/journal                                                                                                                                                                                                                                                                                    
+  sudo systemd-tmpfiles --create --prefix /var/log/journal  
+  sudo systemctl restart systemd-journald
+
+
 --------- TO DO FOR EACH FISHCAM EVEN WHEN USING THE FISHCAM SD-CARD IMAGE ---------
 
 6- Update GitHub repo:
