@@ -305,6 +305,13 @@ def main():
         logging.info("To enable: set 'imu.enabled: true' in fishcam_config.yaml")
         sys.exit(0)
 
+    # BNO085 hardware limit: minimum sample rate is 1 Hz (maximum report interval
+    # is 1,000,000 µs). Values below 1 Hz will cause enable_feature() to fail.
+    if imu_cfg['sample_rate_hz'] < 1:
+        logging.error(f"sample_rate_hz ({imu_cfg['sample_rate_hz']}) is below the "
+                      f"BNO085 minimum of 1 Hz. Set sample_rate_hz >= 1 in fishcam_config.yaml.")
+        sys.exit(1)
+
     # Build output file path: ../data/imu/{timestamp}_{fishcam_id}_imu.csv
     paths    = config.get_paths()
     data_dir = Path(__file__).parent / paths['imu_dir']

@@ -73,7 +73,7 @@ def setup_imu(imu_cfg, max_attempts=5, retry_delay=2.0):
     Retries several times with a delay to handle BNO085 cold-start timing —
     the sensor needs a moment after power-on before it accepts feature commands.
     """
-    interval_us = int(1_000_000 / imu_cfg['sample_rate_hz'])
+    interval_us = int(1_000_000 / imu_cfg['sample_rate_hz'])  # µs per sample
     i2c = busio.I2C(board.SCL, board.SDA)
 
     last_error = None
@@ -245,6 +245,13 @@ def main():
         imu_cfg = config.get_imu_settings()
     except Exception as e:
         print(f"Failed to load configuration: {e}")
+        sys.exit(1)
+
+    # BNO085 hardware limit: minimum sample rate is 1 Hz (maximum report interval
+    # is 1,000,000 µs). Values below 1 Hz will cause enable_feature() to fail.
+    if imu_cfg['sample_rate_hz'] < 1:
+        print(f"ERROR: sample_rate_hz ({imu_cfg['sample_rate_hz']}) is below the "
+              f"BNO085 minimum of 1 Hz. Set sample_rate_hz >= 1 in fishcam_config.yaml.")
         sys.exit(1)
 
     print(f"Initialising BNO085 at I2C address 0x{imu_cfg['i2c_address']:02X}...")
