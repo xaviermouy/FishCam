@@ -118,11 +118,10 @@ class FishCamConfig:
         paths = self.config.get('paths', {})
 
         return {
-            'video_dir':     paths.get('video_dir',  '../data/video'),
-            'log_dir':       paths.get('log_dir',    '../data/logs'),
-            'imu_dir':       paths.get('imu_dir',    '../data/imu'),
-            'gps_dir':       paths.get('gps_dir',    '../data/gps'),
-            'iterator_file': paths.get('iterator_file', 'iterator.config'),
+            'video_dir': paths.get('video_dir', '../data/video'),
+            'log_dir':   paths.get('log_dir',   '../data/logs'),
+            'imu_dir':   paths.get('imu_dir',   '../data/imu'),
+            'gps_dir':   paths.get('gps_dir',   '../data/gps'),
         }
 
     def get_power_saving_settings(self):

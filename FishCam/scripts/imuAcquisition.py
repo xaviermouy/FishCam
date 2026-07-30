@@ -19,6 +19,9 @@ Output CSV columns (enabled reports only):
 - gyro_{x,y,z}_rads  : Gyroscope (rad/s)
 - mag_{x,y,z}_uT     : Magnetometer (µT)
 - quat_{i,j,k,real}  : Rotation vector (quaternion, dimensionless)
+- heading_deg         : Yaw / heading referenced to magnetic north (0–360°)
+- pitch_deg           : Pitch angle (degrees)
+- roll_deg            : Roll angle (degrees)
 - lin_accel_{x,y,z}_ms2 : Linear acceleration without gravity (m/s²)
 - gravity_{x,y,z}_ms2   : Gravity vector (m/s²)
 """
@@ -37,6 +40,7 @@ from adafruit_bno08x.i2c import BNO08X_I2C
 
 import csv
 import logging
+import math
 import signal
 import sys
 import time
@@ -44,6 +48,17 @@ from datetime import datetime
 from pathlib import Path
 
 import config
+
+
+def quat_to_euler(i, j, k, real):
+    """Convert quaternion to (heading, pitch, roll) in degrees.
+
+    Heading is referenced to magnetic north, normalised to 0–360°.
+    """
+    heading = math.degrees(math.atan2(2*(real*k + i*j), 1 - 2*(j**2 + k**2)))
+    pitch   = math.degrees(math.asin(max(-1.0, min(1.0, 2*(real*j - k*i)))))
+    roll    = math.degrees(math.atan2(2*(real*i + j*k), 1 - 2*(i**2 + j**2)))
+    return heading % 360, pitch, roll
 
 
 class IMUAcquisition:
@@ -72,17 +87,19 @@ class IMUAcquisition:
 
     # ── Setup ──────────────────────────────────────────────────────────────
 
-    def _setup_imu(self, max_attempts=5, retry_delay=2.0):
+    def _setup_imu(self, retry_delay=2.0, warn_every=10):
         """Initialise I2C bus and BNO085, then enable configured reports.
 
-        Retries several times with a delay to handle BNO085 cold-start timing —
-        the sensor needs a moment after power-on before it accepts feature commands.
+        Retries indefinitely with a delay to handle BNO085 cold-start timing or
+        transient I2C errors. Logs a prominent warning every warn_every attempts
+        so persistent hardware failures are visible in the log.
         """
         interval_us = int(1_000_000 / self.sample_rate_hz)  # µs per sample
         i2c = busio.I2C(board.SCL, board.SDA)
 
-        last_error = None
-        for attempt in range(1, max_attempts + 1):
+        attempt = 0
+        while not self.shutdown_requested:
+            attempt += 1
             try:
                 self._imu = BNO08X_I2C(i2c, address=self.i2c_address)
                 if self.enable_accel:
@@ -104,15 +121,17 @@ class IMUAcquisition:
                     self._imu.enable_feature(BNO_REPORT_GRAVITY,
                                              report_interval=interval_us)
                 logging.info(f"IMU initialised at I2C address 0x{self.i2c_address:02X}, "
-                             f"sample rate {self.sample_rate_hz} Hz")
+                             f"sample rate {self.sample_rate_hz} Hz "
+                             f"(attempt {attempt})")
                 return
             except Exception as e:
-                last_error = e
-                logging.warning(f"IMU init attempt {attempt}/{max_attempts} failed: {e} "
-                                f"— retrying in {retry_delay}s...")
+                if attempt % warn_every == 0:
+                    logging.error(f"IMU still failing after {attempt} attempts — "
+                                  f"check wiring and I2C address. Last error: {e}")
+                else:
+                    logging.warning(f"IMU init attempt {attempt} failed: {e} "
+                                    f"— retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
-
-        raise RuntimeError(f"IMU failed to initialise after {max_attempts} attempts: {last_error}")
 
     # ── CSV helpers ────────────────────────────────────────────────────────
 
@@ -126,7 +145,8 @@ class IMUAcquisition:
         if self.enable_mag:
             cols += ['mag_x_uT', 'mag_y_uT', 'mag_z_uT']
         if self.enable_rot:
-            cols += ['quat_i', 'quat_j', 'quat_k', 'quat_real']
+            cols += ['quat_i', 'quat_j', 'quat_k', 'quat_real',
+                     'heading_deg', 'pitch_deg', 'roll_deg']
         if self.enable_lin_accel:
             cols += ['lin_accel_x_ms2', 'lin_accel_y_ms2', 'lin_accel_z_ms2']
         if self.enable_gravity:
@@ -176,6 +196,15 @@ class IMUAcquisition:
             row['quat_j']    = self._fmt(j)
             row['quat_k']    = self._fmt(k)
             row['quat_real'] = self._fmt(r)
+            if all(v is not None for v in (i, j, k, r)):
+                heading, pitch, roll = quat_to_euler(i, j, k, r)
+                row['heading_deg'] = self._fmt(heading)
+                row['pitch_deg']   = self._fmt(pitch)
+                row['roll_deg']    = self._fmt(roll)
+            else:
+                row['heading_deg'] = ''
+                row['pitch_deg']   = ''
+                row['roll_deg']    = ''
 
         if self.enable_lin_accel:
             val = self._imu.linear_acceleration  # (x, y, z) m/s² or None

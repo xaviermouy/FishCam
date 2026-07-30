@@ -35,9 +35,11 @@ if pgrep -f "powerSavingMode.py" > /dev/null; then
     echo -e "Power Saving Script: ${CHECK} Running"
 
     # Try to determine mode from recent logs
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    LOG_DIR=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR'); import config; print(config.get_paths()['log_dir'])" 2>/dev/null)
-    POWER_SAVING_LOG="$SCRIPT_DIR/$LOG_DIR/power_saving.log"
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    LOG_DIR=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR/..'); import config; print(config.get_paths()['log_dir'])" 2>/dev/null)
+    CPU_FREQ_POWER_SAVING=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR/..'); import config; print(config.get_power_saving_settings()['cpu_freq_power_saving'])" 2>/dev/null)
+    CPU_FREQ_CONFIG=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR/..'); import config; print(config.get_power_saving_settings()['cpu_freq_config'])" 2>/dev/null)
+    POWER_SAVING_LOG="$SCRIPT_DIR/../$LOG_DIR/power_saving.log"
     if [ -f "$POWER_SAVING_LOG" ]; then
         LAST_MODE=$(tail -50 "$POWER_SAVING_LOG" | grep -E "(power saving mode activated|Configuration mode activated)" | tail -1)
         if echo "$LAST_MODE" | grep -q "power saving"; then
@@ -77,16 +79,18 @@ if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
 
     # Check if settings match expected mode
     if [ "$EXPECTED_MODE" = "power_saving" ]; then
-        if [ "$GOVERNOR" = "powersave" ] && [ "$MAX_FREQ" -le 600000 ]; then
+        THRESHOLD=$((CPU_FREQ_POWER_SAVING * 1000))
+        if [ "$GOVERNOR" = "powersave" ] && [ "$MAX_FREQ" -le "$THRESHOLD" ]; then
             echo -e "Status:              ${CHECK} Correctly throttled"
         else
-            echo -e "Status:              ${WARN} Expected powersave governor & 600 MHz cap"
+            echo -e "Status:              ${WARN} Expected powersave governor & ${CPU_FREQ_POWER_SAVING} MHz cap"
         fi
     elif [ "$EXPECTED_MODE" = "config" ]; then
-        if [ "$GOVERNOR" = "ondemand" ] && [ "$MAX_FREQ" -ge 1000000 ]; then
+        THRESHOLD=$((CPU_FREQ_CONFIG * 1000))
+        if [ "$GOVERNOR" = "ondemand" ] && [ "$MAX_FREQ" -ge "$THRESHOLD" ]; then
             echo -e "Status:              ${CHECK} Full performance available"
         else
-            echo -e "Status:              ${WARN} Expected ondemand governor & 1000 MHz cap"
+            echo -e "Status:              ${WARN} Expected ondemand governor & ${CPU_FREQ_CONFIG} MHz cap"
         fi
     fi
 
@@ -338,7 +342,8 @@ fi
 # CPU throttling
 if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq ]; then
     MAX_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)
-    if [ "$MAX_FREQ" -le 600000 ]; then
+    THRESHOLD=$((CPU_FREQ_POWER_SAVING * 1000))
+    if [ "$MAX_FREQ" -le "$THRESHOLD" ]; then
         echo -e "CPU throttled:       ${GREEN}~75 mA saved${NC}"
         SAVINGS=$((SAVINGS + 75))
     fi

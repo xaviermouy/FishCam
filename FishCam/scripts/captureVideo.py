@@ -9,6 +9,7 @@ import logging
 import subprocess
 import sys
 import json
+from pathlib import Path
 import config
 
 # Global list to store frame metadata
@@ -46,17 +47,7 @@ def capture_frame_metadata(request):
     frame_metadata.append(frame_info)
     frame_counter += 1
 
-def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
-    # Open iterator file for output filenames
-    curDir = os.getcwd()
-    iterFile = open(os.path.join(curDir, iterFileName), 'r')
-    iterNumber = iterFile.read()
-    if len(iterNumber) == 0:
-        iterNumber = 1
-    else:
-        iterNumber = int(iterNumber)
-    iterFile.close()
-
+def captureVideo(outDir, videoSettings, flagname=''):
     # Get current time string for the file names
     now = datetime.now()
     timeStampStr = now.strftime("%Y%m%dT%H%M%S.%fZ")
@@ -65,7 +56,7 @@ def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
 
     videofilename = os.path.join(
         outDir,
-        str(iterNumber) + flagname + '_' + timeStampStr + '_' +
+        timeStampStr + flagname + '_' +
         str(videoSettings['resolution'][0]) + 'x' + str(videoSettings['resolution'][1]) +
         '_awbm-' + str(videoSettings['AwbMode']) +
         '_aem-' + str(videoSettings['AeExposureMode']) +
@@ -200,12 +191,6 @@ def captureVideo(outDir, iterFileName, videoSettings, flagname=''):
     except Exception as e:
         logging.error(f"Failed to save frame metadata: {e}")
 
-    # Update iterator file
-    iterFile = open(os.path.join(curDir, iterFileName), 'w')
-    iterNumber += 1
-    iterFile.write(str(iterNumber))
-    iterFile.close()
-
 def isCameraOperational():
     try:
         camera = Picamera2()
@@ -215,7 +200,7 @@ def isCameraOperational():
         logging.error(str(e))
         return False
 
-def captureVideo_loop(outDir, iterFileName, iterations=0, videoSettings=0, flagname=''):
+def captureVideo_loop(outDir, iterations=0, videoSettings=0, flagname=''):
     # Load default settings if nothing else provided
     if videoSettings == 0:
         videoSettings = initVideoSettings()
@@ -223,12 +208,12 @@ def captureVideo_loop(outDir, iterFileName, iterations=0, videoSettings=0, flagn
     if iterations == 0:  # Indefinite loop if no iterations provided
         loop = True
         while loop:
-            captureVideo(outDir, iterFileName, videoSettings, flagname=flagname)
+            captureVideo(outDir, videoSettings, flagname=flagname)
     elif iterations > 0:  # Finite loop if iterations provided
         for it in range(iterations):
-            captureVideo(outDir, iterFileName, videoSettings, flagname=flagname)
+            captureVideo(outDir, videoSettings, flagname=flagname)
 
-def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
+def captureVideo_test(outDir, duration=10, flagname=''):
 
     # Test brightness (range: -1.0 to 1.0)
     videoSettings = initVideoSettings()
@@ -236,7 +221,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = [-1.0, -0.5, 0.0, 0.5, 1.0]
     for param in paramVals:
         videoSettings['brightness'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
     # Test contrast (range: 0.0 to 32.0)
     videoSettings = initVideoSettings()
@@ -244,7 +229,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = [0.5, 1.0, 1.5, 2.0, 4.0]
     for param in paramVals:
         videoSettings['contrast'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
     # Test saturation (range: 0.0 to 32.0)
     videoSettings = initVideoSettings()
@@ -252,7 +237,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = [0.0, 0.5, 1.0, 2.0, 4.0]
     for param in paramVals:
         videoSettings['saturation'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
     # Test sharpness (range: 0.0 to 16.0)
     videoSettings = initVideoSettings()
@@ -260,7 +245,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = [0.0, 1.0, 2.0, 4.0, 8.0]
     for param in paramVals:
         videoSettings['sharpness'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
     # Test AnalogueGain (range: 1.0 to 16.0)
     videoSettings = initVideoSettings()
@@ -268,7 +253,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = [1.0, 2.0, 4.0, 8.0, 12.0, 16.0]
     for param in paramVals:
         videoSettings['AnalogueGain'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
     # Test AeExposureMode (0: Normal, 1: Short, 2: Long)
     videoSettings = initVideoSettings()
@@ -276,7 +261,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = [0, 1, 2]
     for param in paramVals:
         videoSettings['AeExposureMode'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
     # Test AwbMode (0: Auto, 1: Tungsten, 2: Fluorescent, 3: Indoor, 4: Daylight, 5: Cloudy)
     videoSettings = initVideoSettings()
@@ -284,7 +269,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = [0, 1, 2, 3, 4, 5]
     for param in paramVals:
         videoSettings['AwbMode'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
     # Test quality levels
     videoSettings = initVideoSettings()
@@ -292,7 +277,7 @@ def captureVideo_test(outDir, iterFileName, duration=10, flagname=''):
     paramVals = ['very_low', 'low', 'medium', 'high', 'very_high']
     for param in paramVals:
         videoSettings['quality'] = param
-        captureVideo_loop(outDir, iterFileName, iterations=1, videoSettings=videoSettings, flagname=flagname)
+        captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
 def main():
     # Load configuration
@@ -300,16 +285,17 @@ def main():
     buzzer_config = config.get_buzzer_settings()
     FishCamID = config.get_fishcam_id()
 
-    # Get paths from configuration
-    outDir = paths['video_dir']
-    logDir = paths['log_dir']
-    iterFileName = paths['iterator_file']
+    # Get paths from configuration, resolved relative to this script's location
+    scriptDir = Path(__file__).parent
+    outDir = str(scriptDir / paths['video_dir'])
+    logDir = str(scriptDir / paths['log_dir'])
     BuzzerEnabled = buzzer_config['enabled']
     BuzzerIterationPeriod = buzzer_config['iteration_period']
 
     # Start logs
     os.makedirs(logDir, exist_ok=True)
-    log_filename = os.path.join(logDir, time.strftime('%Y%m%dT%H%M%S') + '.log')
+    sessionTimestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+    log_filename = os.path.join(logDir, sessionTimestamp + '.log')
     logging.basicConfig(
         filename=log_filename,
         level=logging.DEBUG,
@@ -317,19 +303,15 @@ def main():
     )
     logging.info('Video acquisition started')
     logging.info(f'FishCam ID: {FishCamID}')
-    os.makedirs(outDir, exist_ok=True)
-    try:
-        curDir = os.getcwd()  # get current working directory
-        # get iteration number
-        iterFile = open(os.path.join(curDir, iterFileName), 'r')
-        iterNumber = iterFile.read()
-        iterFile.close()
-        # Creates output folder for this session based on the iteration number
-        subFolderName = iterNumber
-        outDir = os.path.join(outDir, subFolderName)
-        if os.path.isdir(outDir) == False:
-            os.mkdir(outDir)
 
+    # Create session folder named by timestamp and fishcam ID
+    os.makedirs(outDir, exist_ok=True)
+    sessionFolder = sessionTimestamp
+    outDir = os.path.join(outDir, sessionFolder)
+    os.makedirs(outDir, exist_ok=True)
+    logging.info(f'Session folder: {outDir}')
+
+    try:
         # Infinite loop
         BuzzerIdx = 0
         while True:
@@ -343,7 +325,7 @@ def main():
                     pid = subprocess.Popen([sys.executable, 'runBuzzer.py', log_filename])
 
             # Capture video
-            captureVideo_loop(outDir, iterFileName, iterations=0, flagname=FishCamID)  # default settings
+            captureVideo_loop(outDir, iterations=0, flagname=FishCamID)  # default settings
 
             # Increment buzzer index
             BuzzerIdx += 1
