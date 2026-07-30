@@ -78,7 +78,7 @@ class IMUAcquisition:
         Retries several times with a delay to handle BNO085 cold-start timing —
         the sensor needs a moment after power-on before it accepts feature commands.
         """
-        interval_us = 1_000_000 // self.sample_rate_hz  # µs per sample
+        interval_us = int(1_000_000 / self.sample_rate_hz)  # µs per sample
         i2c = busio.I2C(board.SCL, board.SDA)
 
         last_error = None
