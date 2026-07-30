@@ -39,7 +39,7 @@ if pgrep -f "powerSavingMode.py" > /dev/null; then
     LOG_DIR=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR/..'); import config; print(config.get_paths()['log_dir'])" 2>/dev/null)
     CPU_FREQ_POWER_SAVING=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR/..'); import config; print(config.get_power_saving_settings()['cpu_freq_power_saving'])" 2>/dev/null)
     CPU_FREQ_CONFIG=$(python3 -c "import sys; sys.path.insert(0,'$SCRIPT_DIR/..'); import config; print(config.get_power_saving_settings()['cpu_freq_config'])" 2>/dev/null)
-    POWER_SAVING_LOG="$SCRIPT_DIR/../$LOG_DIR/power_saving.log"
+    POWER_SAVING_LOG="$SCRIPT_DIR/../$LOG_DIR/power_saving_$(hostname).log"
     if [ -f "$POWER_SAVING_LOG" ]; then
         LAST_MODE=$(tail -50 "$POWER_SAVING_LOG" | grep -E "(power saving mode activated|Configuration mode activated)" | tail -1)
         if echo "$LAST_MODE" | grep -q "power saving"; then

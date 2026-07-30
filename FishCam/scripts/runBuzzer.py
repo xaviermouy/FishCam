@@ -19,7 +19,8 @@ if not os.path.isdir(logDir):
 if len(sys.argv) > 1:
     log_filename = sys.argv[1]
 else:
-    log_filename = os.path.join(logDir, f"buzzer_{time.strftime('%Y%m%dT%H%M%S')}.log")
+    fishcam_id = config.get_fishcam_id()
+    log_filename = os.path.join(logDir, f"buzzer_{time.strftime('%Y%m%dT%H%M%S')}_{fishcam_id}.log")
 
 # Configure logging to file (same format as captureVideo.py)
 logging.basicConfig(

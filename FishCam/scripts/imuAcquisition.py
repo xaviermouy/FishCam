@@ -277,7 +277,8 @@ def main():
     # Setup logging
     log_dir = Path(__file__).parent / config.get_paths()['log_dir']
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / 'imu_acquisition.log'
+    fishcam_id = config.get_fishcam_id()
+    log_file = log_dir / f'imu_acquisition_{fishcam_id}.log'
 
     logging.basicConfig(
         level=logging.INFO,
@@ -304,14 +305,13 @@ def main():
         logging.info("To enable: set 'imu.enabled: true' in fishcam_config.yaml")
         sys.exit(0)
 
-    # Build output file path: ../data/imu/{fishcam_id}_{timestamp}_imu.csv
+    # Build output file path: ../data/imu/{timestamp}_{fishcam_id}_imu.csv
     paths    = config.get_paths()
     data_dir = Path(__file__).parent / paths['imu_dir']
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    fishcam_id = config.get_fishcam_id()
-    timestamp  = datetime.now().strftime('%Y%m%dT%H%M%S')
-    csv_path   = data_dir / f'{fishcam_id}_{timestamp}_imu.csv'
+    timestamp  = datetime.now().strftime('%Y%m%dT%H%M%S.%fZ')
+    csv_path   = data_dir / f'{timestamp}_{fishcam_id}_imu.csv'
 
     # Log startup configuration
     logging.info("IMU acquisition ENABLED")

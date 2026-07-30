@@ -463,7 +463,8 @@ def main():
     # Setup logging
     log_dir = Path(__file__).parent / config.get_paths()['log_dir']
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / 'power_saving.log'
+    fishcam_id = config.get_fishcam_id()
+    log_file = log_dir / f'power_saving_{fishcam_id}.log'
 
     logging.basicConfig(
         level=logging.INFO,

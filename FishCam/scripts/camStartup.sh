@@ -64,7 +64,7 @@ if pgrep -f "powerSavingMode.py" > /dev/null; then
     echo "Power saving controller already running, skipping..."
 else
     echo "Starting power saving controller..."
-    sudo python3 ./powerSavingMode.py >> "$LOG_DIR/power_saving_startup.log" 2>&1 &
+    sudo python3 ./powerSavingMode.py >> "$LOG_DIR/power_saving_startup_$(hostname).log" 2>&1 &
 fi
 
 # Wait for power saving controller to initialize
@@ -76,7 +76,7 @@ if pgrep -f "imuAcquisition.py" > /dev/null; then
     echo "IMU acquisition already running, skipping..."
 else
     echo "Starting IMU acquisition..."
-    python3 ./imuAcquisition.py >> "$LOG_DIR/imu_startup.log" 2>&1 &
+    python3 ./imuAcquisition.py >> "$LOG_DIR/imu_startup_$(hostname).log" 2>&1 &
 fi
 
 # Start video capture (runs in foreground)

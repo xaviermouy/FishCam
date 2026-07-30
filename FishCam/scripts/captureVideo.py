@@ -51,12 +51,11 @@ def captureVideo(outDir, videoSettings, flagname=''):
     # Get current time string for the file names
     now = datetime.now()
     timeStampStr = now.strftime("%Y%m%dT%H%M%S.%fZ")
-    if len(flagname) > 0:
-        flagname = '_' + flagname
+    suffix = '_' + flagname if len(flagname) > 0 else ''
 
     videofilename = os.path.join(
         outDir,
-        timeStampStr + flagname + '_' +
+        timeStampStr + suffix + '_' +
         str(videoSettings['resolution'][0]) + 'x' + str(videoSettings['resolution'][1]) +
         '_awbm-' + str(videoSettings['AwbMode']) +
         '_aem-' + str(videoSettings['AeExposureMode']) +
@@ -295,7 +294,7 @@ def main():
     # Start logs
     os.makedirs(logDir, exist_ok=True)
     sessionTimestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
-    log_filename = os.path.join(logDir, sessionTimestamp + '.log')
+    log_filename = os.path.join(logDir, sessionTimestamp + '_' + FishCamID + '.log')
     logging.basicConfig(
         filename=log_filename,
         level=logging.DEBUG,
