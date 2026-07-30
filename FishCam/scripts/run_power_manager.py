@@ -227,6 +227,8 @@ class PowerSavingController:
             max_attempts = 15
             retry_interval = 1.0
             for attempt in range(max_attempts):
+                if self.shutdown_requested:
+                    break
                 self.run_command("nmcli radio wifi off")
                 time.sleep(retry_interval)
 
@@ -267,7 +269,7 @@ class PowerSavingController:
         if self.throttle_cpu:
             # Set CPU governor to powersave
             logging.info("Setting CPU to powersave mode...")
-            for cpu in range(4):  # Pi Zero 2W has 4 cores
+            for cpu in range(os.cpu_count() or 4):  # use actual CPU count
                 # Check if cpufreq interface exists for this CPU
                 if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor"):
                     self.run_command(f"echo powersave | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
@@ -278,7 +280,7 @@ class PowerSavingController:
             # Cap CPU frequency to reduce power
             freq_khz = self.cpu_freq_power_saving * 1000  # Convert MHz to kHz
             logging.info(f"Capping CPU frequency to {self.cpu_freq_power_saving} MHz...")
-            for cpu in range(4):
+            for cpu in range(os.cpu_count() or 4):
                 if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq"):
                     self.run_command(f"echo {freq_khz} | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
                 elif cpu == 0:
@@ -359,7 +361,7 @@ class PowerSavingController:
         if self.throttle_cpu:
             # Set CPU governor to ondemand (balanced performance)
             logging.info("Setting CPU to ondemand mode...")
-            for cpu in range(4):
+            for cpu in range(os.cpu_count() or 4):
                 if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor"):
                     self.run_command(f"echo ondemand | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
                 elif cpu == 0:
@@ -369,7 +371,7 @@ class PowerSavingController:
             # Restore max CPU frequency
             freq_khz = self.cpu_freq_config * 1000  # Convert MHz to kHz
             logging.info(f"Restoring CPU frequency to {self.cpu_freq_config} MHz...")
-            for cpu in range(4):
+            for cpu in range(os.cpu_count() or 4):
                 if os.path.exists(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq"):
                     self.run_command(f"echo {freq_khz} | sudo tee /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_max_freq")
                 elif cpu == 0:
@@ -471,7 +473,6 @@ def main():
         format='%(asctime)s %(levelname)s %(message)s',
         handlers=[
             logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
         ]
     )
 
@@ -479,9 +480,10 @@ def main():
     logging.info("FishCam Power Saving Mode Controller")
     logging.info("="*60)
 
-    # Load power saving configuration
+    # Load configuration
     try:
         power_saving_config = config.get_power_saving_settings()
+        network_cfg = config.get_network_settings()
     except Exception as e:
         logging.error(f"Failed to load configuration: {e}")
         sys.exit(1)
@@ -499,8 +501,8 @@ def main():
     logging.info(f"Check interval: {power_saving_config['check_interval']}s")
 
     # Log WiFi auto-connect settings
-    if power_saving_config['wifi_auto_connect']:
-        logging.info(f"WiFi auto-connect ENABLED: {power_saving_config['wifi_ssid']}")
+    if network_cfg['wifi_auto_connect']:
+        logging.info(f"WiFi auto-connect ENABLED: {network_cfg['wifi_ssid']}")
     else:
         logging.info("WiFi auto-connect DISABLED")
 
@@ -534,20 +536,20 @@ def main():
         throttle_cpu=power_saving_config['throttle_cpu'],
         stop_services=power_saving_config['stop_services'],
         disable_led_triggers=power_saving_config['disable_led_triggers'],
-        # WiFi auto-connect
-        wifi_auto_connect=power_saving_config['wifi_auto_connect'],
-        wifi_ssid=power_saving_config['wifi_ssid'],
-        wifi_password=power_saving_config['wifi_password'],
+        # WiFi auto-connect (credentials from network section)
+        wifi_auto_connect=network_cfg['wifi_auto_connect'],
+        wifi_ssid=network_cfg['wifi_ssid'],
+        wifi_password=network_cfg['wifi_password'],
         # CPU frequency settings
         cpu_freq_power_saving=power_saving_config['cpu_freq_power_saving'],
         cpu_freq_config=power_saving_config['cpu_freq_config']
     )
-    
+
     # Register signal handlers
     signal.signal(signal.SIGTERM, controller.signal_handler)
     signal.signal(signal.SIGINT, controller.signal_handler)
     logging.info("Signal handlers registered")
-    
+
     controller.run()
 
 

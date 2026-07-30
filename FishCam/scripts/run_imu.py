@@ -65,7 +65,7 @@ class IMUAcquisition:
     """Acquires and records IMU data from the BNO085 via I2C."""
 
     # Number of samples between CSV flushes (limits data loss on power cut)
-    FLUSH_INTERVAL = 50
+    FLUSH_INTERVAL = 10
 
     def __init__(self, sample_rate_hz, i2c_address,
                  enable_accelerometer, enable_gyroscope, enable_magnetometer,
@@ -101,6 +101,15 @@ class IMUAcquisition:
         so persistent hardware failures are visible in the log.
         """
         interval_us = int(1_000_000 / self.sample_rate_hz)  # µs per sample
+
+        # Deinit any existing bus before creating a new one (prevents descriptor leak on retries)
+        if self._i2c is not None:
+            try:
+                self._i2c.deinit()
+            except Exception:
+                pass
+            self._i2c = None
+
         self._i2c = busio.I2C(board.SCL, board.SDA)
 
         attempt = 0
@@ -318,14 +327,13 @@ def main():
     log_dir = Path(__file__).parent / config.get_paths()['log_dir']
     log_dir.mkdir(parents=True, exist_ok=True)
     fishcam_id = config.get_fishcam_id()
-    log_file = log_dir / f'imu_acquisition_{fishcam_id}.log'
+    log_file = log_dir / f'imu_{fishcam_id}.log'
 
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(message)s',
         handlers=[
             logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout),
         ]
     )
 

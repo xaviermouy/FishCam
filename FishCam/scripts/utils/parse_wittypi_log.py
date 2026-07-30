@@ -45,7 +45,13 @@ def parse_wittypi_log(log_file_path):
     # Pattern for lines with only Vout
     vout_only_pattern = r'Current Vout=([\d.]+)V'
 
-    with open(log_file_path, 'r') as f:
+    try:
+        f_handle = open(log_file_path, 'r')
+    except OSError as e:
+        print(f"Warning: Could not open {log_file_path}: {e}")
+        return data
+
+    with f_handle as f:
         for line in f:
             # Check if line contains "Current" voltage information
             if 'Current' not in line:

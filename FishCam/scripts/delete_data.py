@@ -6,7 +6,7 @@ Deletes all files in the data directories defined in fishcam_config.yaml
 (video, logs, IMU, GPS). The directory structure is preserved.
 
 Usage (from the scripts directory):
-    python3 deleteData.py
+    python3 delete_data.py
 """
 
 from pathlib import Path

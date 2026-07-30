@@ -1,133 +1,202 @@
-username: fishcam
-hostname: fishcam0x (replace x by the fishcam number)
-
---------- ALREADY DONE WHEN USING THE FISHCAM SD-CARD IMAGE ---------
-
-1- Turn off bluetooth
-
-2- install software:
-sudo apt update
-sudo apt upgrade
-sudo apt install python3
-sudo apt install cron
-sudo apt install git
-
-3- Dowload GitHub repo:
-cd /home/fishcam/Desktop/
-git clone https://github.com/xaviermouy/FishCam.git.
-
-chmod +x /home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCamRepo.sh
-
-4- Open control center:
-Interfaces > enable ssh
-Localization > set timezone to UTC
-System > Boot to CLI
-System > Change hostname to fishcam01
-System > splash screen off
-
-# setup IMU
-- pip install adafruit-blinka   # must be installed first                                                                                                                                                                                                                                                                           pip install adafruit-circuitpython-bno08x
-- pip install adafruit-circuitpython-bno08x
-  If you get a "externally managed environment" warning (common on newer Raspberry Pi OS), add --break-system-packages: 
-  pip install --break-system-packages adafruit-blinka
-  pip install --break-system-packages adafruit-circuitpython-bno08x
-
-- Enable I2C: Interface Options → I2C → Enable
-- confirm the BNO085 is detected:
-  sudo i2cdetect -y 1  # Should show 0x4A on the grid
-  
-- Lower baud rate (from 400kHz to 100kHz)
-	sudo nano /boot/firmware/config.txt                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
-	Find the line:                                                                                                                                                                                                                                                                                                    
-	dtparam=i2c_arm=on                                                                                                                                                                                                                                                                                                   
-	Change it to:                                                                                                                                                                                                                                                                                                       dtparam=i2c_arm=on,i2c_arm_baudrate=100000
-	dtparam=i2c_arm=on,i2c_arm_baudrate=100000
-
-    Save (Ctrl+O, Enter, Ctrl+X), then reboot:
-	sudo reboot
-
-	To verify the baudrate was applied after reboot:
-	grep -r baudrate /boot/firmware/config.txt
-	Should show 000186a0 which is 100000 in hex.
+================================================================================
+  FISHCAM SETUP GUIDE
+================================================================================
+  Default username : fishcam
+  Default hostname : fishcam0x  (replace x with the unit number)
+  Scripts location : /home/fishcam/Desktop/FishCam/FishCam/scripts/
 
 
-5- Setup cron job:
-crontab -e
-@reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/camStartup.sh &
-Save the changes by pressing CTRL+O, then press Enter to confirm.
-Exit Nano by pressing CTRL+X
-Verify that the schedule has been saved: crontab -l
+================================================================================
+  PART A — ONE-TIME SETUP  (already done on the SD-card image)
+================================================================================
 
-6- Mark fishcam number on SD card (with sharpie)
+  A1. Turn off Bluetooth
+      ────────────────────────────────────────────────────────────────────────
 
-7- change ownership of fishcam flder to avoid permission issues:
-sudo chown -R fishcam:fishcam /home/fishcam/Desktop/FishCam/
+  A2. Install required software
+      ────────────────────────────────────────────────────────────────────────
+      sudo apt update
+      sudo apt upgrade
+      sudo apt install python3 cron git
+
+  A3. Download the GitHub repository
+      ────────────────────────────────────────────────────────────────────────
+      cd /home/fishcam/Desktop/
+      git clone https://github.com/xaviermouy/FishCam.git
+
+      chmod +x /home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCamRepo.sh
+
+  A4. Configure the Raspberry Pi (raspi-config)
+      ────────────────────────────────────────────────────────────────────────
+      Interfaces  > Enable SSH
+      Interfaces  > Enable I2C
+      Localisation > Set timezone to UTC
+      System      > Boot to CLI
+      System      > Change hostname to fishcam01
+      System      > Splash screen OFF
+
+  A5. Set up the IMU (Adafruit BNO085)
+      ────────────────────────────────────────────────────────────────────────
+      Install Python libraries:
+          pip install adafruit-blinka                    # must be installed first
+          pip install adafruit-circuitpython-bno08x
+
+          NOTE: On newer Raspberry Pi OS you may see an "externally managed
+          environment" warning. Add --break-system-packages in that case:
+              pip install --break-system-packages adafruit-blinka
+              pip install --break-system-packages adafruit-circuitpython-bno08x
+
+      Confirm the sensor is detected on the I2C bus:
+          sudo i2cdetect -y 1    # should show 0x4A on the grid
+
+      Lower the I2C baud rate (400 kHz → 100 kHz) for stability:
+          sudo nano /boot/firmware/config.txt
+          Find:    dtparam=i2c_arm=on
+          Replace: dtparam=i2c_arm=on,i2c_arm_baudrate=100000
+          Save (Ctrl+O, Enter) and exit (Ctrl+X), then reboot:
+              sudo reboot
+
+          Verify after reboot:
+              grep baudrate /boot/firmware/config.txt
+              # Should show 000186a0 (= 100000 in hex)
+
+  A6. Set up the startup cron job
+      ────────────────────────────────────────────────────────────────────────
+      crontab -e
+
+      Add the following line:
+          @reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcamStartup.sh &
+
+      Save (Ctrl+O, Enter) and exit (Ctrl+X).
+      Verify the entry was saved:
+          crontab -l
+
+  A7. Fix folder ownership (avoids permission errors)
+      ────────────────────────────────────────────────────────────────────────
+      sudo chown -R fishcam:fishcam /home/fishcam/Desktop/FishCam/
+
+  A8. Enable persistent system journal (survives reboots)
+      ────────────────────────────────────────────────────────────────────────
+      By default the journal is stored in RAM and lost on reboot.
+      Run the following to enable persistent storage:
+
+          sudo mkdir -p /var/log/journal
+          sudo systemd-tmpfiles --create --prefix /var/log/journal
+          sudo systemctl restart systemd-journald
+
+  A9. Mark the fishcam number on the SD card (with a sharpie)
+      ────────────────────────────────────────────────────────────────────────
 
 
-8-Save the system journal across reboots (persistent logging)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
-  By default, the journal is stored in RAM and lost on reboot. Enable persistent storage:                                                                                                                                                                                                                              
-  sudo mkdir -p /var/log/journal                                                                                                                                                                                                                                                                                    
-  sudo systemd-tmpfiles --create --prefix /var/log/journal  
-  sudo systemctl restart systemd-journald
+================================================================================
+  PART B — PER-UNIT SETUP  (repeat for every fishcam, even with the SD image)
+================================================================================
+
+  B1. Update the GitHub repository
+      ────────────────────────────────────────────────────────────────────────
+      Manual:
+          cd /home/fishcam/Desktop/FishCam
+          git fetch origin
+          git reset --hard origin/main
+          git clean -fd
+
+      Automated:
+          bash /home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCamRepo.sh
+
+  B2. Install WittyPi (v4 mini)
+      ────────────────────────────────────────────────────────────────────────
+      cd /home/fishcam
+      wget http://www.uugear.com/repo/WittyPi4/install.sh
+      sudo sh install.sh
+      # Installs to /home/fishcam/wittypi — matches wittypi.log_dir in fishcam_config.yaml
+
+  B3. Configure WittyPi
+      ────────────────────────────────────────────────────────────────────────
+      sudo sh /home/fishcam/wittypi/wittyPi.sh
+          > Synchronise network time
+          > View/change other settings
+              > Default state when powered: ON
+              > Set min voltage: 5.5 V
+
+  B4. Set the hostname  →  this becomes the FishCam ID
+      ────────────────────────────────────────────────────────────────────────
+      raspi-config > System > Change hostname to fishcam0x
+
+      NOTE: The FishCam ID is read directly from the hostname at runtime.
+      No edit to fishcam_config.yaml is needed for the ID.
+
+  B5. Set the unique buzzer beep count
+      ────────────────────────────────────────────────────────────────────────
+      Edit: /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
+
+      Set buzzer.beep_count to a number unique to this unit:
+          fishcam01 → beep_count: 11
+          fishcam02 → beep_count: 12
+          etc.
+
+      Each unit must have a different beep_count so it can be identified
+      acoustically from the recordings.
+
+  B6. Configure WiFi credentials
+      ────────────────────────────────────────────────────────────────────────
+      Edit: /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
+
+      Under the network: section set:
+          wifi_auto_connect: true
+          wifi_ssid:         "<network name>"
+          wifi_password:     "<password>"
+
+  B7. Expand the filesystem
+      ────────────────────────────────────────────────────────────────────────
+      sudo raspi-config
+          > Advanced Options > Expand Filesystem
+
+  B8. Adjust lens focus
+      ────────────────────────────────────────────────────────────────────────
+      rpicam-hello --timeout 0 --width 1920 --height 1080 --framerate 10
+
+  B9. Adjust camera orientation
+      ────────────────────────────────────────────────────────────────────────
+      rpicam-hello --timeout 0 --width 1920 --height 1080 --framerate 10
+
+      Set vflip / hflip in fishcam_config.yaml as needed.
+      Add coloured tape to the chassis and bottle to mark the "up" side.
+
+  B10. Configure and test power saving mode
+       ───────────────────────────────────────────────────────────────────────
+       Edit: /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
+       Adjust the power_saving: section for the deployment scenario.
+
+  B11. Label the chassis
+       ───────────────────────────────────────────────────────────────────────
+       Add a "fishcam0x" label to the outside of the chassis.
+
+  B12. Physical checks before deployment
+       ───────────────────────────────────────────────────────────────────────
+       [ ] Coin battery seated on the WittyPi board
+       [ ] Frame screws tight
+       [ ] Camera ribbon cable firmly connected on both ends
+       [ ] O-rings inspected and greased
+       [ ] Bottle closed and sealed
+       [ ] Pressure test with pump to verify seal
 
 
---------- TO DO FOR EACH FISHCAM EVEN WHEN USING THE FISHCAM SD-CARD IMAGE ---------
+================================================================================
+  DIAGNOSTIC TOOLS
+================================================================================
 
-6- Update GitHub repo:
-Manual
-	cd /home/fishcam/Desktop/FishCam
-	git fetch origin
-	git reset --hard origin/main
-	git clean -fd
-automated:
-	./home/fishcam/Desktop/FishCam/FishCam/scripts/updateFishCamRepo.sh
+  System monitor  (processes, logs, hardware, disk — live dashboard)
+  ──────────────────────────────────────────────────────────────────
+      cd /home/fishcam/Desktop/FishCam/FishCam/scripts
+      python3 monitor_system.py
+      # Press r to refresh immediately, q to quit
 
-7- Install WittyPi (v4 mini):
-cd /home/fishcam/Desktop
-wget http://www.uugear.com/repo/WittyPi4/install.sh
-sudo sh install.sh
+  IMU live display  (do NOT run while run_imu.py is active)
+  ──────────────────────────────────────────────────────────────────
+      cd /home/fishcam/Desktop/FishCam/FishCam/scripts
+      python3 monitor_imu.py
+      # Press q to quit
 
-8- Setup WittyPi:
-sudo sh /home/fishcam/Desktop/wittypi/wittyPi.sh
-> synchronise network time
-> view/change other settings
-> default state when powered: ON
-> set min voltage to 5.5V
-
-9- Change hostname 
-Open control center > System > Change hostname to fishcam0x
-
-10- Change FishCam ID
-Edit /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
-Change fishCam:id to "fishcam0x" (change x to fishcam number)
-
-11- Change Buzzer Sequence
-Edit /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
-make sure fields in "auto" mode are correct
-
-12- Expand filesystem
-sudo raspi-config
-
-13- Adjust focus of lens
-rpicam-hello --timeout 0 --width 1920 --height 1080 --framerate 10
-
-14- Adjust orientation of the camera
-rpicam-hello --timeout 0 --width 1920 --height 1080 --framerate 10
-Adjust vflip and hflip in fishcam_config.yaml
-Add colored tape to chassis and bottle to indicate the "up" side
-
-15- Configure and test power saving mode in /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
-
-16- Add label "fishcam0x" to chassis of fishcam
-
-17- Make sure coin battery is set on the board
-
-18- Make sure screws of the frame are tight
-
-19- Make sure the camera ribbon cable is well attacehd on both ends
-
-20- Check o-rings and grease
-
-21- Close bottle
-
-22- Test that bootle is sealed properly using pump
+  Power saving status report
+  ──────────────────────────────────────────────────────────────────
+      bash /home/fishcam/Desktop/FishCam/FishCam/scripts/utils/check_power_status.sh

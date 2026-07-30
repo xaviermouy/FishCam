@@ -96,17 +96,40 @@ class FishCamConfig:
         """
         return self.config.get('fishcam', {})
 
-    def get_buzzer_settings(self):
+    def get_wittypi_settings(self):
         """
-        Get buzzer settings as a dictionary
+        Get WittyPi settings.
 
         Returns:
-            dict: Buzzer settings (returns the full buzzer config structure)
+            dict: WittyPi settings (log_dir path)
         """
-        buzzer = self.config.get('buzzer', {})
+        wittypi = self.config.get('wittypi', {})
+        return {
+            'log_dir': wittypi.get('log_dir', '/home/fishcam/wittypi'),
+        }
 
-        # Return the full buzzer configuration including mode-specific settings
-        return buzzer
+    def get_network_settings(self):
+        """
+        Get network / WiFi settings.
+
+        Returns:
+            dict: Network settings (wifi_auto_connect, wifi_ssid, wifi_password)
+        """
+        network = self.config.get('network', {})
+        return {
+            'wifi_auto_connect': network.get('wifi_auto_connect', False),
+            'wifi_ssid':         network.get('wifi_ssid', ''),
+            'wifi_password':     network.get('wifi_password', ''),
+        }
+
+    def get_buzzer_settings(self):
+        """
+        Get buzzer settings as a dictionary.
+
+        Returns:
+            dict: Full buzzer configuration section.
+        """
+        return self.config.get('buzzer', {})
 
     def get_paths(self):
         """
@@ -126,7 +149,9 @@ class FishCamConfig:
 
     def get_power_saving_settings(self):
         """
-        Get power saving mode settings
+        Get power saving mode settings.
+
+        WiFi credentials are in get_network_settings(), not here.
 
         Returns:
             dict: Power saving settings including component-specific controls
@@ -135,25 +160,21 @@ class FishCamConfig:
         components = power_saving.get('components', {})
 
         return {
-            'enabled': power_saving.get('enabled', False),
-            'reed_switch_pin': power_saving.get('reed_switch_pin', 18),
-            'led_pin': power_saving.get('led_pin', 23),
-            'check_interval': power_saving.get('check_interval', 2.0),
-            # WiFi auto-connect settings
-            'wifi_auto_connect': power_saving.get('wifi_auto_connect', False),
-            'wifi_ssid': power_saving.get('wifi_ssid', ''),
-            'wifi_password': power_saving.get('wifi_password', ''),
+            'enabled':              power_saving.get('enabled', False),
+            'reed_switch_pin':      power_saving.get('reed_switch_pin', 18),
+            'led_pin':              power_saving.get('led_pin', 23),
+            'check_interval':       power_saving.get('check_interval', 2.0),
             # CPU frequency settings (in MHz)
             'cpu_freq_power_saving': power_saving.get('cpu_freq_power_saving', 800),
-            'cpu_freq_config': power_saving.get('cpu_freq_config', 1000),
-            # Component-specific controls (default all to True for backward compatibility)
-            'disable_wifi': components.get('disable_wifi', True),
-            'disable_bluetooth': components.get('disable_bluetooth', True),
-            'disable_hdmi': components.get('disable_hdmi', True),
-            'disable_usb': components.get('disable_usb', False),  # Default False (safe)
-            'throttle_cpu': components.get('throttle_cpu', True),
-            'stop_services': components.get('stop_services', True),
-            'disable_led_triggers': components.get('disable_led_triggers', True)
+            'cpu_freq_config':       power_saving.get('cpu_freq_config', 1000),
+            # Component-specific controls
+            'disable_wifi':          components.get('disable_wifi', True),
+            'disable_bluetooth':     components.get('disable_bluetooth', True),
+            'disable_hdmi':          components.get('disable_hdmi', True),
+            'disable_usb':           components.get('disable_usb', False),
+            'throttle_cpu':          components.get('throttle_cpu', True),
+            'stop_services':         components.get('stop_services', True),
+            'disable_led_triggers':  components.get('disable_led_triggers', True),
         }
 
     def get_imu_settings(self):
@@ -243,6 +264,14 @@ def get_fishcam_id():
 def get_paths():
     """Get file paths from configuration"""
     return get_config().get_paths()
+
+def get_network_settings():
+    """Get network / WiFi settings from configuration"""
+    return get_config().get_network_settings()
+
+def get_wittypi_settings():
+    """Get WittyPi settings from configuration"""
+    return get_config().get_wittypi_settings()
 
 def get_power_saving_settings():
     """Get power saving mode settings from configuration"""

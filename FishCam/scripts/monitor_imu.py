@@ -6,12 +6,12 @@ Real-time terminal display of BNO085 IMU data for testing and verification.
 Designed to run over SSH — no screen or display hardware required.
 
 Usage (from the scripts directory):
-    python3 utils/imuMonitor.py
+    python3 monitor_imu.py
 
 Controls:
     q / Q / Esc  — quit
 
-WARNING: Do NOT run while imuAcquisition.py is running. Both scripts
+WARNING: Do NOT run while run_imu.py is running. Both scripts
 access the same I2C device and will conflict.
 """
 
@@ -19,10 +19,6 @@ import curses
 import math
 import sys
 import time
-from pathlib import Path
-
-# Allow importing config from the parent scripts/ directory
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
 import board

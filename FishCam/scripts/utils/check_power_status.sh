@@ -14,6 +14,11 @@ CHECK="${GREEN}✓${NC}"
 CROSS="${RED}✗${NC}"
 WARN="${YELLOW}⚠${NC}"
 
+# Defaults (overridden below if power manager is running and config is readable)
+CPU_FREQ_POWER_SAVING=800
+CPU_FREQ_CONFIG=1000
+WIFI_RADIO="unknown"
+
 echo "================================================================="
 echo "          FishCam Power Saving Status Report"
 echo "================================================================="
@@ -30,8 +35,8 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${BLUE}POWER SAVING MODE${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-# Check if powerSavingMode.py is running
-if pgrep -f "powerSavingMode.py" > /dev/null; then
+# Check if run_power_manager.py is running
+if pgrep -f "run_power_manager.py" > /dev/null; then
     echo -e "Power Saving Script: ${CHECK} Running"
 
     # Try to determine mode from recent logs
@@ -122,7 +127,7 @@ echo -e "${BLUE}WiFi${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
 # Check WiFi radio status
-WIFI_RADIO=$(nmcli radio wifi)
+WIFI_RADIO=$(nmcli radio wifi 2>/dev/null) || WIFI_RADIO="unknown"
 if [ "$WIFI_RADIO" = "enabled" ]; then
     echo -e "Radio Status:        ${CHECK} Enabled"
 
@@ -313,8 +318,8 @@ if [ -r /sys/kernel/debug/gpio ]; then
     echo "GPIO Usage:"
     grep -E "gpio-18|gpio-23" /sys/kernel/debug/gpio 2>/dev/null || echo "  (Requires root for detailed GPIO info)"
 else
-    echo "Reed Switch (GPIO18): Configured in powerSavingMode.py"
-    echo "Status LED (GPIO23):  Configured in powerSavingMode.py"
+    echo "Reed Switch (GPIO18): Configured in run_power_manager.py"
+    echo "Status LED (GPIO23):  Configured in run_power_manager.py"
 fi
 echo ""
 

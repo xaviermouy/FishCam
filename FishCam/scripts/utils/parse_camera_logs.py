@@ -151,7 +151,11 @@ def parse_frame_stats(log_file_path):
 
 def parse_buzzer_sequences(log_file_path):
     """
-    Parse buzzer sequences from a log file.
+    Parse buzzer sequences from a buzzer log file.
+
+    Matches log lines written by run_buzzer.py:
+      - Config at startup: "Beeps per sequence     : 14"
+      - Per-sequence:      "Sequence 1/5 at 08:00:00.678"
 
     Args:
         log_file_path (Path): Path to the log file
@@ -161,51 +165,64 @@ def parse_buzzer_sequences(log_file_path):
     """
     results = []
     filename = log_file_path.name
-    file_datetime = extract_datetime_from_filename(filename)
 
-    if file_datetime is None:
-        return results
-
-    # Pattern: Buzzer sequence 1/5 starting at 12:51:47.409 | Beeps: 12 | Beep duration: 0.1s | Gap between beeps: 0.1s
-    buzzer_pattern = r'Buzzer sequence\s+(\d+/\d+)\s+starting at\s+([\d:\.]+)\s+\|\s+Beeps:\s+(\d+)\s+\|\s+Beep duration:\s+([\d.]+)s\s+\|\s+Gap between beeps:\s+([\d.]+)s'
+    # Pattern for the per-sequence line logged by run_buzzer.py
+    # Example: "2026-07-30 08:00:00,678 INFO Sequence 1/5 at 08:00:00.678"
+    seq_pattern     = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+\s+INFO\s+Sequence\s+(\d+/\d+)\s+at\s+([\d:\.]+)'
+    beep_cnt_pattern = r'INFO\s+Beeps per sequence\s+:\s+(\d+)'
+    beep_dur_pattern = r'INFO\s+Beep duration\s+:\s+([\d.]+)'
+    beep_gap_pattern = r'INFO\s+Gap between beeps\s+:\s+([\d.]+)'
 
     try:
         with open(log_file_path, 'r') as f:
-            for line in f:
-                match = re.search(buzzer_pattern, line)
-                if match:
-                    sequence = match.group(1)
-                    time_str = match.group(2)  # HH:MM:SS.mmm
-                    beeps = int(match.group(3))
-                    duration = float(match.group(4))
-                    gap = float(match.group(5))
+            lines = f.readlines()
 
-                    # Parse the time and combine with file date
-                    try:
-                        time_parts = time_str.split(':')
-                        hours = int(time_parts[0])
-                        minutes = int(time_parts[1])
-                        seconds = float(time_parts[2])
+        # Read startup config values (may appear multiple times across sessions)
+        beep_count = None
+        beep_dur   = None
+        beep_gap   = None
 
-                        # Create datetime combining file date with buzzer time
-                        buzzer_datetime = file_datetime.replace(
-                            hour=hours,
-                            minute=minutes,
-                            second=int(seconds),
-                            microsecond=int((seconds % 1) * 1000000)
-                        )
+        for line in lines:
+            m = re.search(beep_cnt_pattern, line)
+            if m:
+                beep_count = int(m.group(1))
+            m = re.search(beep_dur_pattern, line)
+            if m:
+                beep_dur = float(m.group(1))
+            m = re.search(beep_gap_pattern, line)
+            if m:
+                beep_gap = float(m.group(1))
 
-                        results.append({
-                            'datetime': buzzer_datetime,
-                            'sequence': sequence,
-                            'beeps': beeps,
-                            'beep_duration': duration,
-                            'gap_between_beeps': gap
-                        })
-                    except (ValueError, IndexError) as e:
-                        print(f"Warning: Could not parse time '{time_str}' in {filename}: {e}")
-    except Exception as e:
-        print(f"Warning: Error reading {log_file_path}: {e}")
+            # Match sequence lines
+            m = re.search(seq_pattern, line)
+            if m:
+                date_str = m.group(1)   # YYYY-MM-DD HH:MM:SS
+                sequence = m.group(2)   # e.g. "1/5"
+                time_str = m.group(3)   # HH:MM:SS.mmm
+
+                try:
+                    dt = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                    time_parts = time_str.split(':')
+                    hours   = int(time_parts[0])
+                    minutes = int(time_parts[1])
+                    seconds = float(time_parts[2])
+                    dt = dt.replace(
+                        hour=hours, minute=minutes,
+                        second=int(seconds),
+                        microsecond=int((seconds % 1) * 1_000_000)
+                    )
+                    results.append({
+                        'datetime':         dt,
+                        'sequence':         sequence,
+                        'beeps':            beep_count,
+                        'beep_duration':    beep_dur,
+                        'gap_between_beeps': beep_gap,
+                    })
+                except (ValueError, IndexError) as e:
+                    print(f"Warning: Could not parse buzzer line in {filename}: {e}")
+
+    except OSError as e:
+        print(f"Warning: Could not read {log_file_path}: {e}")
 
     return results
 
@@ -224,9 +241,9 @@ def parse_log_messages(log_file_path, level):
     results = []
     log_filename = log_file_path.name
 
-    # Pattern: YYYY-MM-DD HH:MM:SS,milliseconds LEVEL module message
-    # Example: 2026-01-05 12:51:38,782 WARNING root This is a warning message
-    log_pattern = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d+)\s+' + level + r'\s+(\S+)\s+(.+)'
+    # Pattern: YYYY-MM-DD HH:MM:SS,milliseconds LEVEL message
+    # Example: 2026-01-05 12:51:38,782 WARNING Frame loss detected
+    log_pattern = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d+)\s+' + level + r'\s+(.+)'
     # Pattern for metadata filename
     metadata_pattern = r'Frame metadata saved:\s*(.+\.json)'
 
@@ -240,34 +257,28 @@ def parse_log_messages(log_file_path, level):
             if match:
                 datetime_str = match.group(1)  # YYYY-MM-DD HH:MM:SS
                 milliseconds = match.group(2)  # milliseconds
-                module = match.group(3)  # module name
-                message = match.group(4)  # message text
+                message      = match.group(3)  # message text
 
                 # Look backwards for metadata filename (up to 10 lines back)
                 metadata_filename = None
                 for j in range(max(0, i - 10), i):
                     metadata_match = re.search(metadata_pattern, lines[j])
                     if metadata_match:
-                        # Extract just the filename from the path
                         full_path = metadata_match.group(1)
                         metadata_filename = Path(full_path).name
-                        break  # Use the most recent metadata filename found
+                        break
 
-                # Use metadata filename if found, otherwise use log filename
                 filename = metadata_filename if metadata_filename else log_filename
 
                 try:
-                    # Parse datetime
                     dt = datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S')
-                    # Add milliseconds
                     dt = dt.replace(microsecond=int(milliseconds) * 1000)
 
                     results.append({
                         'datetime': dt,
                         'filename': filename,
-                        'level': level,
-                        'module': module,
-                        'message': message
+                        'level':    level,
+                        'message':  message,
                     })
                 except ValueError as e:
                     print(f"Warning: Could not parse datetime '{datetime_str}' in {log_filename}: {e}")
@@ -349,17 +360,16 @@ def save_log_messages_csv(data, output_file, level):
         return
 
     with open(output_file, 'w', newline='') as csvfile:
-        fieldnames = ['datetime', 'filename', 'level', 'module', 'message']
+        fieldnames = ['datetime', 'filename', 'level', 'message']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         writer.writeheader()
         for row in data:
             writer.writerow({
-                'datetime': row['datetime'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],  # Include milliseconds
+                'datetime': row['datetime'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                 'filename': row['filename'],
-                'level': row['level'],
-                'module': row['module'],
-                'message': row['message']
+                'level':    row['level'],
+                'message':  row['message'],
             })
 
     print(f"{level} messages saved to {output_file}")
@@ -446,40 +456,34 @@ def main():
     output_path = Path(args.output_folder)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Find all log files with datetime pattern
-    log_files = sorted(input_path.glob('*.log'))
+    # Collect all log files; route each type to the appropriate parser
+    all_log_files    = sorted(input_path.glob('*.log'))
+    video_log_files  = [f for f in all_log_files if f.name.startswith('video_')]
+    buzzer_log_files = [f for f in all_log_files if f.name.startswith('buzzer_')]
 
-    # Filter to only include files with datetime pattern
-    datetime_log_files = [f for f in log_files if extract_datetime_from_filename(f.name) is not None]
-
-    if not datetime_log_files:
-        print(f"No log files with datetime pattern found in '{args.input_folder}'.")
+    if not all_log_files:
+        print(f"No log files found in '{args.input_folder}'.")
         return
 
-    print(f"Found {len(datetime_log_files)} log files to process.")
+    print(f"Found {len(all_log_files)} log file(s): "
+          f"{len(video_log_files)} video, {len(buzzer_log_files)} buzzer, "
+          f"{len(all_log_files)} total for warnings/errors.")
 
     # Parse all log files
-    all_frame_stats = []
+    all_frame_stats      = []
     all_buzzer_sequences = []
     all_warning_messages = []
-    all_error_messages = []
+    all_error_messages   = []
 
-    for log_file in datetime_log_files:
-        # Extract frame stats
-        frame_stats = parse_frame_stats(log_file)
-        all_frame_stats.extend(frame_stats)
+    for log_file in video_log_files:
+        all_frame_stats.extend(parse_frame_stats(log_file))
 
-        # Extract buzzer sequences
-        buzzer_sequences = parse_buzzer_sequences(log_file)
-        all_buzzer_sequences.extend(buzzer_sequences)
+    for log_file in buzzer_log_files:
+        all_buzzer_sequences.extend(parse_buzzer_sequences(log_file))
 
-        # Extract WARNING messages
-        warning_messages = parse_log_messages(log_file, 'WARNING')
-        all_warning_messages.extend(warning_messages)
-
-        # Extract ERROR messages
-        error_messages = parse_log_messages(log_file, 'ERROR')
-        all_error_messages.extend(error_messages)
+    for log_file in all_log_files:
+        all_warning_messages.extend(parse_log_messages(log_file, 'WARNING'))
+        all_error_messages.extend(parse_log_messages(log_file, 'ERROR'))
 
     print(f"\nExtracted {len(all_frame_stats)} frame statistics entries.")
     print(f"Extracted {len(all_buzzer_sequences)} buzzer sequence entries.")

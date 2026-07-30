@@ -1,12 +1,12 @@
 from picamera2 import Picamera2
 import signal
+import threading
 from picamera2.encoders import H264Encoder, MJPEGEncoder, Quality
 from picamera2.outputs import FileOutput
 import time
 from datetime import datetime
 import os
 import logging
-import subprocess
 import sys
 import json
 from pathlib import Path
@@ -16,15 +16,22 @@ import config
 frame_metadata = []
 frame_counter = 0
 
-def emergency_shutdown(signum, frame):
-    """Handle shutdown signals from WittyPi"""
-    logging.info(f"Received shutdown signal {signum}, exiting...")
-    print("Emergency shutdown!")
-    sys.exit(0)
+# Shutdown event — set by the signal handler so the recording loop
+# exits cleanly without touching camera objects from signal context.
+_shutdown_event = threading.Event()
+
+def shutdown_handler(signum, frame):
+    """Handle shutdown signals from WittyPi or the OS.
+
+    Only sets the event; all camera cleanup happens in the normal
+    finally path so Picamera2 threads are never interrupted mid-flight.
+    """
+    logging.info(f"Received signal {signum} — stopping recording and shutting down...")
+    _shutdown_event.set()
 
 # Register signal handlers
-signal.signal(signal.SIGTERM, emergency_shutdown)
-signal.signal(signal.SIGINT, emergency_shutdown)
+signal.signal(signal.SIGTERM, shutdown_handler)
+signal.signal(signal.SIGINT,  shutdown_handler)
 
 def initVideoSettings():
     """Load video settings from configuration file"""
@@ -71,91 +78,95 @@ def captureVideo(outDir, videoSettings, flagname=''):
     print(videofilename)
     logging.info(videofilename)
 
-    # Initialize camera
     camera = Picamera2()
+    try:
+        # Configure camera
+        video_config = camera.create_video_configuration(
+            main={"size": videoSettings['resolution'], "format": "RGB888"},
+            controls={
+                "FrameRate": videoSettings['frameRate']
+            }
+        )
+        camera.configure(video_config)
 
-    # Configure camera
-    video_config = camera.create_video_configuration(
-        main={"size": videoSettings['resolution'], "format": "RGB888"},
-        controls={
-            "FrameRate": videoSettings['frameRate']
+        # Set camera controls
+        controls = {}
+
+        # Auto Exposure Enable/Disable
+        controls["AeEnable"] = videoSettings['AeEnable']
+
+        # Auto Exposure Mode (only if AeEnable is True)
+        if videoSettings['AeEnable']:
+            controls["AeExposureMode"] = videoSettings['AeExposureMode']
+
+        # Auto White Balance Enable/Disable
+        controls["AwbEnable"] = videoSettings['AwbEnable']
+
+        # Auto White Balance Mode (only if AwbEnable is True)
+        if videoSettings['AwbEnable']:
+            controls["AwbMode"] = videoSettings['AwbMode']
+
+        # Analogue gain
+        controls["AnalogueGain"] = videoSettings['AnalogueGain']
+
+        # Image adjustments
+        controls["Sharpness"] = videoSettings['sharpness']
+        controls["Contrast"] = videoSettings['contrast']
+        controls["Brightness"] = videoSettings['brightness']
+        controls["Saturation"] = videoSettings['saturation']
+
+        camera.set_controls(controls)
+
+        # Handle flip transformations
+        transform = {}
+        if videoSettings['vflip']:
+            transform['vflip'] = True
+        if videoSettings.get('hflip', False):
+            transform['hflip'] = True
+        if transform:
+            camera.transform = transform
+
+        # Map quality string to Quality enum
+        quality_map = {
+            'very_low': Quality.VERY_LOW,
+            'low': Quality.LOW,
+            'medium': Quality.MEDIUM,
+            'high': Quality.HIGH,
+            'very_high': Quality.VERY_HIGH
         }
-    )
-    camera.configure(video_config)
+        quality_setting = quality_map.get(videoSettings['quality'], Quality.MEDIUM)
 
-    # Set camera controls
-    controls = {}
+        # Select encoder based on format
+        if videoSettings['format'] == 'h264':
+            encoder = H264Encoder()
+        elif videoSettings['format'] == 'mjpeg':
+            encoder = MJPEGEncoder()
+        else:
+            raise ValueError(f"Unsupported video format: '{videoSettings['format']}'. Use 'h264' or 'mjpeg'.")
 
-    # Auto Exposure Enable/Disable
-    controls["AeEnable"] = videoSettings['AeEnable']
+        # Start recording
+        camera.start()
+        if _shutdown_event.wait(timeout=2):  # warmup — exits early if shutdown signalled
+            camera.stop()
+            return  # no recording was made; skip metadata
 
-    # Auto Exposure Mode (only if AeEnable is True)
-    if videoSettings['AeEnable']:
-        controls["AeExposureMode"] = videoSettings['AeExposureMode']
+        # Clear frame metadata for this video
+        global frame_metadata, frame_counter
+        frame_metadata.clear()
+        frame_counter = 0
 
-    # Auto White Balance Enable/Disable
-    controls["AwbEnable"] = videoSettings['AwbEnable']
+        # Register callback to capture frame metadata
+        camera.post_callback = capture_frame_metadata
 
-    # Auto White Balance Mode (only if AwbEnable is True)
-    if videoSettings['AwbEnable']:
-        controls["AwbMode"] = videoSettings['AwbMode']
-
-    # Analogue gain
-    controls["AnalogueGain"] = videoSettings['AnalogueGain']
-
-    # Image adjustments
-    controls["Sharpness"] = videoSettings['sharpness']
-    controls["Contrast"] = videoSettings['contrast']
-    controls["Brightness"] = videoSettings['brightness']
-    controls["Saturation"] = videoSettings['saturation']
-
-    camera.set_controls(controls)
-
-    # Handle flip transformations
-    transform = {}
-    if videoSettings['vflip']:
-        transform['vflip'] = True
-    if videoSettings.get('hflip', False):
-        transform['hflip'] = True
-    if transform:
-        camera.transform = transform
-
-    # Map quality string to Quality enum
-    quality_map = {
-        'very_low': Quality.VERY_LOW,
-        'low': Quality.LOW,
-        'medium': Quality.MEDIUM,
-        'high': Quality.HIGH,
-        'very_high': Quality.VERY_HIGH
-    }
-    quality_setting = quality_map.get(videoSettings['quality'], Quality.MEDIUM)
-
-    # Select encoder based on format
-    if videoSettings['format'] == 'h264':
-        encoder = H264Encoder()
-    elif videoSettings['format'] == 'mjpeg':
-        encoder = MJPEGEncoder()
-
-    # Start recording
-    camera.start()
-    time.sleep(2)  # Allow camera to warm up and adjust settings
-
-    # Clear frame metadata for this video
-    global frame_metadata, frame_counter
-    frame_metadata.clear()
-    frame_counter = 0
-
-    # Register callback to capture frame metadata
-    camera.post_callback = capture_frame_metadata
-
-    # Record video
-    output = FileOutput(videofilename)
-    video_start_time = datetime.now().astimezone().strftime('%Y%m%dT%H%M%S.%f%z')
-    camera.start_recording(encoder, output, quality_setting)
-    time.sleep(videoSettings['duration'])
-    camera.stop_recording()
-    camera.stop()
-    camera.close()
+        # Record video
+        output = FileOutput(videofilename)
+        video_start_time = datetime.now().astimezone().strftime('%Y%m%dT%H%M%S.%f%z')
+        camera.start_recording(encoder, output, quality_setting)
+        _shutdown_event.wait(timeout=videoSettings['duration'])  # returns early on shutdown
+        camera.stop_recording()
+        camera.stop()
+    finally:
+        camera.close()
 
     # Save frame metadata to JSON file
     metadata_filename = videofilename.replace('.' + videoSettings['format'], '_metadata.json')
@@ -205,11 +216,12 @@ def captureVideo_loop(outDir, iterations=0, videoSettings=0, flagname=''):
         videoSettings = initVideoSettings()
     # Loop
     if iterations == 0:  # Indefinite loop if no iterations provided
-        loop = True
-        while loop:
+        while not _shutdown_event.is_set():
             captureVideo(outDir, videoSettings, flagname=flagname)
     elif iterations > 0:  # Finite loop if iterations provided
         for it in range(iterations):
+            if _shutdown_event.is_set():
+                break
             captureVideo(outDir, videoSettings, flagname=flagname)
 
 def captureVideo_test(outDir, duration=10, flagname=''):
@@ -279,31 +291,27 @@ def captureVideo_test(outDir, duration=10, flagname=''):
         captureVideo_loop(outDir, iterations=1, videoSettings=videoSettings, flagname=flagname)
 
 def main():
-    # Load configuration
     paths = config.get_paths()
-    buzzer_config = config.get_buzzer_settings()
     FishCamID = config.get_fishcam_id()
 
-    # Get paths from configuration, resolved relative to this script's location
     scriptDir = Path(__file__).parent
     outDir = str(scriptDir / paths['video_dir'])
     logDir = str(scriptDir / paths['log_dir'])
-    BuzzerEnabled = buzzer_config['enabled']
-    BuzzerIterationPeriod = buzzer_config['iteration_period']
 
-    # Start logs
     os.makedirs(logDir, exist_ok=True)
-    sessionTimestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
-    log_filename = os.path.join(logDir, sessionTimestamp + '_' + FishCamID + '.log')
+    log_filename = os.path.join(logDir, 'video_' + FishCamID + '.log')
     logging.basicConfig(
         filename=log_filename,
-        level=logging.DEBUG,
-        format='%(asctime)s %(levelname)s %(name)s %(message)s'
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s %(message)s'
     )
-    logging.info('Video acquisition started')
+
+    sessionTimestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+    logging.info('=' * 60)
+    logging.info('FishCam Video Acquisition')
+    logging.info('=' * 60)
     logging.info(f'FishCam ID: {FishCamID}')
 
-    # Create session folder named by timestamp and fishcam ID
     os.makedirs(outDir, exist_ok=True)
     sessionFolder = sessionTimestamp
     outDir = os.path.join(outDir, sessionFolder)
@@ -311,28 +319,12 @@ def main():
     logging.info(f'Session folder: {outDir}')
 
     try:
-        # Infinite loop
-        BuzzerIdx = 0
-        while True:
-
-            # Ring buzzer
-            if BuzzerIdx == 0 and BuzzerEnabled:
-                camOK = isCameraOperational()  # checks that camera is working
-
-                if camOK == True:  # rings the buzzer only if camera is confirmed to be working
-                    logging.info('Buzzer turned ON')
-                    pid = subprocess.Popen([sys.executable, 'runBuzzer.py', log_filename])
-
-            # Capture video
-            captureVideo_loop(outDir, iterations=0, flagname=FishCamID)  # default settings
-
-            # Increment buzzer index
-            BuzzerIdx += 1
-            if BuzzerIdx == BuzzerIterationPeriod:
-                BuzzerIdx = 0
-
+        captureVideo_loop(outDir, iterations=0, flagname=FishCamID)
     except BaseException as e:
         logging.error(str(e))
+    finally:
+        if _shutdown_event.is_set():
+            logging.info("Shutdown signal received — recording stopped cleanly.")
 
 if __name__ == '__main__':
     main()
