@@ -5,20 +5,27 @@ FishCam IMU Monitor  (Testing Utility)
 Real-time terminal display of BNO085 IMU data for testing and verification.
 Designed to run over SSH — no screen or display hardware required.
 
+If run_imu.py is already running, the monitor reads from its live CSV file
+instead of accessing the I2C bus directly, avoiding conflicts.
+
 Usage (from the scripts directory):
     python3 monitor_imu.py
 
 Controls:
     q / Q / Esc  — quit
 
-WARNING: Do NOT run while run_imu.py is running. Both scripts
-access the same I2C device and will conflict.
+Source modes (shown in header):
+    direct sensor  — monitor has exclusive I2C access
+    live recording — run_imu.py is running; values read from its CSV
+    waiting        — run_imu.py is running but no CSV data yet
 """
 
 import curses
 import math
+import subprocess
 import sys
 import time
+from pathlib import Path
 
 import config
 import board
@@ -61,15 +68,116 @@ def fmt_angle(value, width=7, decimals=1):
     return f'{value:{width}.{decimals}f}'
 
 
-# ── IMU setup ──────────────────────────────────────────────────────────────────
+# ── Source detection ───────────────────────────────────────────────────────────
+
+def is_run_imu_active():
+    """Return True if run_imu.py is currently running."""
+    r = subprocess.run(['pgrep', '-f', 'run_imu.py'],
+                       capture_output=True, text=True)
+    return r.returncode == 0
+
+
+# ── CSV reading ────────────────────────────────────────────────────────────────
+
+def _find_latest_csv(imu_dir):
+    """Return the most recently modified .csv file in imu_dir, or None."""
+    candidates = list(Path(imu_dir).glob('*.csv'))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def _read_last_line(path):
+    """Return the last non-empty line of a file, or None if only header exists."""
+    with open(path, 'rb') as f:
+        # Read header
+        header_line = f.readline().decode().strip()
+        if not header_line:
+            return None, None
+
+        # Seek to near end and walk back to find last complete line
+        try:
+            f.seek(-2, 2)
+        except OSError:
+            return header_line, None  # file too small — only header
+
+        while f.read(1) != b'\n':
+            try:
+                f.seek(-2, 1)
+            except OSError:
+                return header_line, None  # still only header
+
+        last = f.readline().decode().strip()
+        return header_line, last if last else None
+
+
+def _parse_float(s):
+    """Parse a CSV float string, returning None if empty or invalid."""
+    try:
+        return float(s) if s.strip() else None
+    except ValueError:
+        return None
+
+
+def read_csv_sample(imu_dir):
+    """Read the latest sample from the most recent IMU CSV.
+
+    Returns a data dict (see read_sensor_sample for format), or None if no
+    CSV exists yet or the file contains only a header row.
+    """
+    csv_path = _find_latest_csv(imu_dir)
+    if csv_path is None:
+        return None
+
+    try:
+        header_line, data_line = _read_last_line(csv_path)
+    except OSError:
+        return None
+
+    if not data_line:
+        return None
+
+    cols   = header_line.split(',')
+    values = data_line.split(',')
+    row    = dict(zip(cols, values))
+
+    def get(key):
+        return _parse_float(row.get(key, ''))
+
+    # Quaternion → Euler
+    qi, qj, qk, qr = get('quat_i'), get('quat_j'), get('quat_k'), get('quat_real')
+    if all(v is not None for v in (qi, qj, qk, qr)):
+        quat = (qi, qj, qk, qr)
+        yaw  = get('heading_deg')
+        pitch = get('pitch_deg')
+        roll  = get('roll_deg')
+    else:
+        quat = yaw = pitch = roll = None
+
+    accel = (get('accel_x_ms2'), get('accel_y_ms2'), get('accel_z_ms2')) \
+            if 'accel_x_ms2' in row else None
+    gyro  = (get('gyro_x_rads'), get('gyro_y_rads'), get('gyro_z_rads')) \
+            if 'gyro_x_rads' in row else None
+    mag   = (get('mag_x_uT'), get('mag_y_uT'), get('mag_z_uT')) \
+            if 'mag_x_uT' in row else None
+    lin   = (get('lin_accel_x_ms2'), get('lin_accel_y_ms2'), get('lin_accel_z_ms2')) \
+            if 'lin_accel_x_ms2' in row else None
+    grav  = (get('gravity_x_ms2'), get('gravity_y_ms2'), get('gravity_z_ms2')) \
+            if 'gravity_x_ms2' in row else None
+
+    return {
+        'source': 'recording',
+        'accel': accel, 'gyro': gyro, 'mag': mag,
+        'quat': quat, 'yaw': yaw, 'pitch': pitch, 'roll': roll,
+        'lin': lin, 'grav': grav,
+    }
+
+
+# ── IMU setup & direct sensor reading ─────────────────────────────────────────
 
 def setup_imu(imu_cfg, max_attempts=5, retry_delay=2.0):
-    """Initialise I2C bus and BNO085, enabling all configured reports.
-
-    Retries several times with a delay to handle BNO085 cold-start timing —
-    the sensor needs a moment after power-on before it accepts feature commands.
-    """
-    interval_us = int(1_000_000 / imu_cfg['sample_rate_hz'])  # µs per sample
+    """Initialise I2C bus and BNO085, enabling all configured reports."""
+    interval_us = int(1_000_000 / imu_cfg['sample_rate_hz'])
     i2c = busio.I2C(board.SCL, board.SDA)
 
     last_error = None
@@ -97,10 +205,33 @@ def setup_imu(imu_cfg, max_attempts=5, retry_delay=2.0):
     raise RuntimeError(f"IMU failed to initialise after {max_attempts} attempts: {last_error}")
 
 
+def read_sensor_sample(imu, imu_cfg):
+    """Read one sample from the IMU and return a data dict."""
+    accel = imu.acceleration        if imu_cfg['accelerometer']       else None
+    gyro  = imu.gyro                if imu_cfg['gyroscope']           else None
+    mag   = imu.magnetic            if imu_cfg['magnetometer']        else None
+    quat  = imu.quaternion          if imu_cfg['rotation_vector']     else None
+    lin   = imu.linear_acceleration if imu_cfg['linear_acceleration'] else None
+    grav  = imu.gravity             if imu_cfg['gravity']             else None
+
+    yaw = pitch = roll = None
+    if quat is not None:
+        qi, qj, qk, qr = quat
+        if all(v is not None for v in (qi, qj, qk, qr)):
+            yaw, pitch, roll = quat_to_euler(qi, qj, qk, qr)
+
+    return {
+        'source': 'sensor',
+        'accel': accel, 'gyro': gyro, 'mag': mag,
+        'quat': quat,   'yaw': yaw,   'pitch': pitch, 'roll': roll,
+        'lin': lin,     'grav': grav,
+    }
+
+
 # ── Display ────────────────────────────────────────────────────────────────────
 
-def draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz):
-    """Read sensors and render one frame."""
+def draw(stdscr, data, imu_cfg, start_time, sample_count, actual_hz):
+    """Render one frame from a data dict."""
     stdscr.erase()
     max_rows, max_cols = stdscr.getmaxyx()
     W = max_cols
@@ -114,33 +245,33 @@ def draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz):
         except curses.error:
             pass
 
-    # ── Read sensors ──
-    accel = imu.acceleration        if imu_cfg['accelerometer']      else None
-    gyro  = imu.gyro                if imu_cfg['gyroscope']          else None
-    mag   = imu.magnetic            if imu_cfg['magnetometer']       else None
-    quat  = imu.quaternion          if imu_cfg['rotation_vector']    else None
-    lin   = imu.linear_acceleration if imu_cfg['linear_acceleration'] else None
-    grav  = imu.gravity             if imu_cfg['gravity']            else None
+    source = data.get('source', 'sensor')
+    source_label = {
+        'sensor':    'direct sensor',
+        'recording': 'live recording  (run_imu.py active — no I2C conflict)',
+        'waiting':   'waiting for first sample  (run_imu.py active)',
+    }.get(source, source)
 
-    # ── Euler angles from quaternion ──
-    yaw, pitch, roll = None, None, None
-    if quat is not None:
-        qi, qj, qk, qr = quat
-        if all(v is not None for v in (qi, qj, qk, qr)):
-            yaw, pitch, roll = quat_to_euler(qi, qj, qk, qr)
+    accel = data.get('accel')
+    gyro  = data.get('gyro')
+    mag   = data.get('mag')
+    lin   = data.get('lin')
+    grav  = data.get('grav')
+    yaw   = data.get('yaw')
+    pitch = data.get('pitch')
+    roll  = data.get('roll')
 
-    # ── Uptime ──
     elapsed = time.monotonic() - start_time
     h = int(elapsed // 3600)
     m = int((elapsed % 3600) // 60)
     s = int(elapsed % 60)
 
-    # ── Render ──
     r = 0
     put(r, '═' * W); r += 1
     put(r, f'  FishCam IMU Monitor'
            f'  |  {imu_cfg["sample_rate_hz"]} Hz configured'
-           f'  |  {actual_hz:.1f} Hz actual', bold=True); r += 1
+           f'  |  {actual_hz:.1f} Hz actual'
+           f'  |  source: {source_label}', bold=True); r += 1
     put(r, '═' * W); r += 1
 
     if imu_cfg['rotation_vector']:
@@ -191,34 +322,62 @@ def draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz):
 
 # ── Main loop ──────────────────────────────────────────────────────────────────
 
-def run_monitor(stdscr, imu, imu_cfg):
-    """Curses main loop — reads IMU and refreshes display each sample interval."""
-    curses.curs_set(0)   # hide cursor
-    stdscr.nodelay(True) # non-blocking getch
+def run_monitor(stdscr, imu_cfg, imu_dir):
+    """Curses main loop — auto-selects source based on whether run_imu.py is active."""
+    curses.curs_set(0)
+    stdscr.nodelay(True)
 
     interval     = 1.0 / imu_cfg['sample_rate_hz']
     start_time   = time.monotonic()
     sample_count = 0
 
-    # Rolling Hz measurement
     hz_window_start = time.monotonic()
     hz_window_count = 0
     actual_hz       = 0.0
 
+    imu          = None   # live I2C object (only when in sensor mode)
+    current_mode = None   # 'sensor' or 'recording'
+
     while True:
         loop_start = time.monotonic()
 
-        # Quit on q / Q / Esc
         key = stdscr.getch()
         if key in (ord('q'), ord('Q'), 27):
             break
 
+        recording_active = is_run_imu_active()
+
+        # ── Mode transitions ──────────────────────────────────────────────────
+        if recording_active and current_mode != 'recording':
+            # Switch to recording mode — release I2C if we held it
+            if imu is not None:
+                try:
+                    imu._i2c.deinit()
+                except Exception:
+                    pass
+                imu = None
+            current_mode = 'recording'
+
+        elif not recording_active and current_mode != 'sensor':
+            # Switch to sensor mode — initialise I2C
+            current_mode = 'sensor'
+            try:
+                imu = setup_imu(imu_cfg, max_attempts=3, retry_delay=1.0)
+            except Exception:
+                imu = None  # will show --- values until it recovers
+
+        # ── Read data ─────────────────────────────────────────────────────────
         try:
-            draw(stdscr, imu, imu_cfg, start_time, sample_count, actual_hz)
+            if current_mode == 'recording':
+                data = read_csv_sample(imu_dir) or {'source': 'waiting'}
+            else:
+                data = read_sensor_sample(imu, imu_cfg) if imu else {'source': 'sensor'}
+
+            draw(stdscr, data, imu_cfg, start_time, sample_count, actual_hz)
             sample_count    += 1
             hz_window_count += 1
         except Exception:
-            pass  # ignore transient read errors — next frame will recover
+            pass  # transient error — next frame recovers
 
         # Update displayed Hz once per second
         now = time.monotonic()
@@ -227,11 +386,17 @@ def run_monitor(stdscr, imu, imu_cfg):
             hz_window_count = 0
             hz_window_start = now
 
-        # Sleep for remainder of sample interval
         elapsed   = time.monotonic() - loop_start
         remaining = interval - elapsed
         if remaining > 0:
             time.sleep(remaining)
+
+    # Clean up I2C on exit
+    if imu is not None:
+        try:
+            imu._i2c.deinit()
+        except Exception:
+            pass
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -239,30 +404,28 @@ def run_monitor(stdscr, imu, imu_cfg):
 def main():
     try:
         imu_cfg = config.get_imu_settings()
+        paths   = config.get_paths()
     except Exception as e:
         print(f"Failed to load configuration: {e}")
         sys.exit(1)
 
-    # BNO085 hardware limit: minimum sample rate is 1 Hz (maximum report interval
-    # is 1,000,000 µs). Values below 1 Hz will cause enable_feature() to fail.
     if imu_cfg['sample_rate_hz'] < 1:
         print(f"ERROR: sample_rate_hz ({imu_cfg['sample_rate_hz']}) is below the "
               f"BNO085 minimum of 1 Hz. Set sample_rate_hz >= 1 in fishcam_config.yaml.")
         sys.exit(1)
 
-    print(f"Initialising BNO085 at I2C address 0x{imu_cfg['i2c_address']:02X}...")
-    try:
-        imu = setup_imu(imu_cfg)
-    except Exception as e:
-        print(f"Failed to initialise IMU: {e}")
-        print("Check wiring and that i2c_address in fishcam_config.yaml matches your hardware.")
-        sys.exit(1)
+    imu_dir = Path(__file__).parent / paths['imu_dir']
 
-    print("IMU ready. Starting monitor...")
+    if is_run_imu_active():
+        print("run_imu.py is active — reading from live CSV (no I2C access).")
+    else:
+        print(f"Initialising BNO085 at I2C address 0x{imu_cfg['i2c_address']:02X}...")
+
+    print("Starting monitor...")
     time.sleep(0.5)
 
     try:
-        curses.wrapper(run_monitor, imu, imu_cfg)
+        curses.wrapper(run_monitor, imu_cfg, imu_dir)
     except KeyboardInterrupt:
         pass
 

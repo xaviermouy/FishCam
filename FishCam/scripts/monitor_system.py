@@ -129,22 +129,39 @@ def count_recent_errors(lines, minutes=60):
 
 # ── Hardware checks ───────────────────────────────────────────────────────────
 
+_camera_cache        = None
+_camera_cache_time   = 0.0
+_CAMERA_CACHE_TTL    = 60  # seconds — libcamera-hello is slow; don't run every cycle
+
 def check_camera():
-    """Return (ok: bool|None, detail: str).  None = indeterminate."""
+    """Return (ok: bool|None, detail: str).  None = indeterminate.
+
+    Result is cached for _CAMERA_CACHE_TTL seconds because libcamera-hello
+    takes several seconds to run and camera presence doesn't change at runtime.
+    """
+    global _camera_cache, _camera_cache_time
+    if _camera_cache is not None and (time.time() - _camera_cache_time) < _CAMERA_CACHE_TTL:
+        return _camera_cache
+
     try:
         r = subprocess.run(['libcamera-hello', '--list-cameras'],
                            capture_output=True, text=True, timeout=5)
         out = (r.stdout + r.stderr).strip()
         if 'Available cameras' in out and '0 :' in out:
-            return True, 'Detected'
-        if 'No cameras available' in out:
-            return False, 'Not detected'
-        return None, 'Unknown'
+            result = True, 'Detected'
+        elif 'No cameras available' in out:
+            result = False, 'Not detected'
+        else:
+            result = None, 'Unknown'
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        # Fallback: check /dev/video* nodes
         if list(Path('/dev').glob('video*')):
-            return True, '/dev/video* present'
-        return None, 'libcamera unavailable'
+            result = True, '/dev/video* present'
+        else:
+            result = None, 'libcamera unavailable'
+
+    _camera_cache      = result
+    _camera_cache_time = time.time()
+    return result
 
 
 def check_i2c(address):

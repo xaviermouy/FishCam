@@ -208,6 +208,48 @@ class PowerSavingController:
         except Exception:
             return False
 
+    def check_wifi_health(self):
+        """Return True if the WiFi interface is up and connected."""
+        try:
+            operstate = Path('/sys/class/net/wlan0/operstate').read_text().strip()
+            return operstate == 'up'
+        except OSError:
+            return False
+
+    def recover_wifi(self):
+        """Attempt to recover a crashed WiFi chip.
+
+        Step 1: soft recovery via nmcli (handles transient drops).
+        Step 2: driver reload via rmmod/modprobe (handles brcmfmac hangs).
+        Returns True if WiFi is restored after either step.
+        """
+        logging.warning("WiFi appears down in config mode — attempting recovery")
+
+        # Step 1: soft recovery
+        logging.info("WiFi recovery step 1: nmcli radio wifi on + reconnect")
+        self.run_command("nmcli radio wifi on")
+        time.sleep(5)
+        self.connect_wifi()
+        time.sleep(3)
+        if self.check_wifi_health():
+            logging.info("WiFi recovered (soft reset)")
+            return True
+
+        # Step 2: driver reload
+        logging.warning("Soft reset failed — reloading brcmfmac driver")
+        self.run_command("sudo rmmod brcmfmac")
+        time.sleep(2)
+        self.run_command("sudo modprobe brcmfmac")
+        time.sleep(5)
+        self.connect_wifi()
+        time.sleep(3)
+        if self.check_wifi_health():
+            logging.info("WiFi recovered (driver reload)")
+            return True
+
+        logging.error("WiFi recovery failed — interface still down after driver reload")
+        return False
+
     def connect_wifi(self):
         """Connect to configured WiFi network"""
         if not self.wifi_auto_connect:
@@ -447,6 +489,9 @@ class PowerSavingController:
                     if self.current_mode != 'config':
                         logging.info("Switch ON - switching to config mode")
                         self.enter_config_mode()
+                    elif self.wifi_auto_connect and not self.check_wifi_health():
+                        # Already in config mode but WiFi dropped — attempt recovery
+                        self.recover_wifi()
                 else:
                     if self.current_mode != 'power_saving':
                         logging.info("Switch OFF - switching to power saving mode")
