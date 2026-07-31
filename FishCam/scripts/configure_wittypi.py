@@ -2,19 +2,19 @@
 """
 FishCam WittyPi Configuration Script
 
-Run once before each deployment (interactively, with sudo):
+Run once before each deployment:
 
   1. Verifies system prerequisites (UTC timezone, NTP sync, WittyPi detected)
   2. Asks whether to apply a power schedule or disable scheduling entirely
   3. Validates the wittypi section of fishcam_config.yaml (schedule mode only)
   4. Shows a visual 24-hour schedule preview for confirmation (schedule mode only)
-  5. Synchronises the WittyPi RTC from the system clock
+  5. Synchronises the WittyPi RTC from the system clock via utilities.sh
   6. Generates and loads the power schedule (or always-on schedule) into WittyPi
-  7. Writes voltage protection thresholds and power-cut delay via I2C
+  7. Writes voltage protection thresholds and power-cut delay via utilities.sh
 
 Usage:
-    sudo python3 configure_wittypi.py              # interactive — asks for mode
-    sudo python3 configure_wittypi.py --disable    # skip prompt, disable schedule
+    python3 configure_wittypi.py              # interactive — asks for mode
+    python3 configure_wittypi.py --disable    # skip prompt, disable schedule
 
 NOTE: Do NOT add this script to fishcamStartup.sh. Run it manually once
 before each deployment to configure WittyPi with the correct schedule.
@@ -33,16 +33,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 import config
-
-# ─── WittyPi I2C register addresses ───────────────────────────────────────────
-# ⚠  VERIFY these against /home/fishcam/wittypi/utilities.sh before relying on
-#    them. They are based on WittyPi 4 documentation and may differ for v4 mini.
-#    If I2C writes fail, set parameters manually via the wittyPi.sh menu.
-I2C_BUS              = 1
-I2C_MC_ADDR          = None       # loaded from config (typically 0x08)
-REG_POWER_CUT_DELAY  = 0x09      # ← verify: power-cut delay (units: seconds)
-REG_LOW_VOLTAGE      = 0x0B      # ← verify: low-voltage cutoff (units: 0.1 V)
-REG_RECOVERY_VOLTAGE = 0x0C      # ← verify: recovery voltage  (units: 0.1 V)
 
 SCHEDULE_FILENAME    = 'schedule.wpi'
 TIMELINE_CHARS       = 72          # width of the 24 h bar (1 char = 20 min)
@@ -403,48 +393,39 @@ def generate_always_on_schedule():
 
 # ─── WittyPi operations ───────────────────────────────────────────────────────
 
-def sync_rtc_from_system(install_dir):
-    """Synchronise the WittyPi RTC (DS3231 at I2C 0x68) from the system clock.
+def _run_wittypi_func(install_dir, bash_cmd):
+    """Source utilities.sh and run a WittyPi bash function.
 
-    Writes directly to the DS3231 RTC registers via i2cset — the same approach
-    used internally by WittyPi's utilities.sh. This avoids dependency on a
-    specific WittyPi script name (syncTime.sh is absent in some versions).
+    Args:
+        install_dir: Path to the WittyPi installation directory.
+        bash_cmd: Bash command to run after sourcing utilities.sh.
 
-    This function is intentionally standalone so that a future run_gps.py can
-    call it after obtaining a valid GPS fix to keep the RTC accurate during
-    deployment without needing to re-run the full setup script.
+    Returns:
+        (ok: bool, output: str)
     """
-    now = datetime.now(timezone.utc)
-
-    def to_bcd(n):
-        return (n // 10) << 4 | (n % 10)
-
-    # DS3231 RTC register map (I2C address 0x68, bus 1)
-    # Registers 0x00–0x06 hold time in BCD: seconds, minutes, hours,
-    # day-of-week, date, month, year (2-digit).
-    # Hour byte: bit 6 = 0 → 24-hour mode (bit 6 = 1 would be 12-hour).
-    dow = now.isoweekday() % 7 + 1   # DS3231: 1=Sunday … 7=Saturday
-    writes = [
-        (0x00, to_bcd(now.second)),
-        (0x01, to_bcd(now.minute)),
-        (0x02, to_bcd(now.hour)),     # bit 6 clear → 24 h mode
-        (0x03, dow),
-        (0x04, to_bcd(now.day)),
-        (0x05, to_bcd(now.month)),
-        (0x06, to_bcd(now.year % 100)),
-    ]
-
-    for reg, val in writes:
-        r = _run(f"i2cset -y 1 0x68 {reg:#04x} {val:#04x}")
-        if r.returncode != 0:
-            return False, (
-                f"Failed to write DS3231 register 0x{reg:02X}: {r.stderr.strip()}"
-            )
-
-    return True, (
-        f"WittyPi RTC synchronised from system clock  "
-        f"({now.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
+    r = subprocess.run(
+        ['bash', '-c', f'source "{install_dir}/utilities.sh" && {bash_cmd}'],
+        capture_output=True, text=True, cwd=install_dir
     )
+    return r.returncode == 0, (r.stdout + r.stderr).strip()
+
+
+def sync_rtc_from_system(install_dir):
+    """Synchronise the WittyPi RTC from the system clock via utilities.sh.
+
+    Calls WittyPi's own system_to_rtc() function so that all I2C
+    communication goes through the WittyPi MC at 0x08 — the correct path
+    for this hardware.
+
+    This function is intentionally standalone so that a future run_gps.py
+    can call it after obtaining a valid GPS fix to keep the RTC accurate
+    during deployment without needing to re-run the full setup script.
+    """
+    ok, out = _run_wittypi_func(install_dir, 'system_to_rtc')
+    now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    if ok:
+        return True, f"WittyPi RTC synchronised from system clock  ({now_str} UTC)"
+    return False, f"system_to_rtc failed: {out}"
 
 
 def save_and_load_schedule(install_dir, content):
@@ -456,7 +437,7 @@ def save_and_load_schedule(install_dir, content):
         return False, f"Failed to write {schedule_path}: {e}"
 
     r = subprocess.run(
-        ['sudo', 'bash', 'runScript.sh'],
+        ['bash', 'runScript.sh'],
         cwd=install_dir, capture_output=True, text=True
     )
     if r.returncode == 0:
@@ -464,49 +445,53 @@ def save_and_load_schedule(install_dir, content):
     return False, f"runScript.sh failed: {(r.stderr or r.stdout).strip()}"
 
 
-def _i2cset(addr, reg, value):
-    """Write one byte to an I2C register via i2cset."""
-    r = _run(f"i2cset -y {I2C_BUS} {addr:#04x} {reg:#04x} {value:#04x}")
-    return r.returncode == 0, r.stderr.strip()
+def write_i2c_params(install_dir, wittypi_cfg):
+    """Write power-cut delay and voltage thresholds via WittyPi's utilities.sh.
 
-
-def write_i2c_params(wittypi_cfg):
-    """Write power-cut delay and voltage thresholds to WittyPi registers.
+    Uses WittyPi's own i2c_write / set_*_voltage_threshold functions so that
+    all register addressing and I2C communication is handled by the firmware's
+    own code — no hardcoded register addresses in this script.
 
     Returns a list of (ok, message) tuples — one per parameter written.
-
-    ⚠  Register addresses at the top of this file need to be verified against
-       /home/fishcam/wittypi/utilities.sh for the WittyPi v4 mini.
-       If any write fails, set the parameter manually via the wittyPi.sh menu.
     """
     results = []
-    addr    = wittypi_cfg['i2c_address']
     delay_s = wittypi_cfg.get('power_cut_delay_sec', 60)
     low_v   = wittypi_cfg.get('low_voltage_cutoff_v', 0)
     rec_v   = wittypi_cfg.get('recovery_voltage_v', 0)
 
-    # Power-cut delay
-    ok, err = _i2cset(addr, REG_POWER_CUT_DELAY, min(delay_s, 255))
+    # Power-cut delay — I2C_CONF_POWER_CUT_DELAY (index 21) via i2c_write
+    # flag 0x01 = write byte; $I2C_MC_ADDRESS and $I2C_CONF_POWER_CUT_DELAY
+    # are defined in utilities.sh itself.
+    clamped = min(int(delay_s), 255)
+    ok, out = _run_wittypi_func(
+        install_dir,
+        f'i2c_write 0x01 $I2C_MC_ADDRESS $I2C_CONF_POWER_CUT_DELAY {clamped}'
+    )
     results.append((ok,
-        f"Power-cut delay {delay_s}s → reg 0x{REG_POWER_CUT_DELAY:02X} = {min(delay_s, 255)}"
-        + ('' if ok else f"  FAILED: {err}")
+        f"Power-cut delay {delay_s}s written to WittyPi"
+        + ('' if ok else f"  FAILED: {out}")
     ))
 
-    # Voltage protection
+    # Voltage protection — use WittyPi's own threshold functions
     if low_v == 0 and rec_v == 0:
-        results.append((True, "Voltage protection disabled — skipping I2C writes"))
+        ok1, out1 = _run_wittypi_func(install_dir, 'clear_low_voltage_threshold')
+        ok2, out2 = _run_wittypi_func(install_dir, 'clear_recovery_voltage_threshold')
+        results.append((ok1 and ok2,
+            "Voltage protection disabled (thresholds cleared)"
+            + ('' if (ok1 and ok2) else f"  FAILED: {out1} {out2}".strip())
+        ))
     else:
         raw_low = round(low_v * 10)
         raw_rec = round(rec_v * 10)
-        ok, err = _i2cset(addr, REG_LOW_VOLTAGE, raw_low)
+        ok, out = _run_wittypi_func(install_dir, f'set_low_voltage_threshold {raw_low}')
         results.append((ok,
-            f"Low-voltage cutoff {low_v} V → reg 0x{REG_LOW_VOLTAGE:02X} = {raw_low}"
-            + ('' if ok else f"  FAILED: {err}")
+            f"Low-voltage cutoff {low_v} V written to WittyPi"
+            + ('' if ok else f"  FAILED: {out}")
         ))
-        ok, err = _i2cset(addr, REG_RECOVERY_VOLTAGE, raw_rec)
+        ok, out = _run_wittypi_func(install_dir, f'set_recovery_voltage_threshold {raw_rec}')
         results.append((ok,
-            f"Recovery voltage {rec_v} V → reg 0x{REG_RECOVERY_VOLTAGE:02X} = {raw_rec}"
-            + ('' if ok else f"  FAILED: {err}")
+            f"Recovery voltage {rec_v} V written to WittyPi"
+            + ('' if ok else f"  FAILED: {out}")
         ))
 
     return results
@@ -697,7 +682,7 @@ def main():
     ok, msg = sync_rtc_from_system(install_dir)
     _print_check(ok, msg)
     if not ok:
-        print("  RTC sync failed — aborting. Check that syncTime.sh is present and sudo works.")
+        print("  RTC sync failed — aborting. Check that utilities.sh is present and the user is in the i2c group.")
         sys.exit(1)
 
     ok, msg = save_and_load_schedule(install_dir, schedule_text)
@@ -706,7 +691,7 @@ def main():
         print("  Schedule loading failed — aborting. Check that runScript.sh is present.")
         sys.exit(1)
 
-    i2c_results = write_i2c_params(wittypi_cfg)
+    i2c_results = write_i2c_params(install_dir, wittypi_cfg)
     i2c_all_ok  = True
     for ok, msg in i2c_results:
         _print_check(ok, msg, warn=not ok)
@@ -736,8 +721,6 @@ def main():
         print()
         print("  ⚠  One or more I2C parameter writes failed.")
         print("     Set them manually via the wittyPi.sh menu.")
-        print("     Also verify register addresses in configure_wittypi.py against")
-        print("     /home/fishcam/wittypi/utilities.sh for the WittyPi v4 mini.")
 
     print("─" * 78)
     print()

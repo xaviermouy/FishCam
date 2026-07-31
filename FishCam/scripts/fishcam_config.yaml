@@ -108,6 +108,7 @@ wittypi:
 
   # Deployment timezone — Pi must always run UTC; times below are in this local timezone.
   # Must be a valid IANA timezone name (e.g. "America/Vancouver", "Pacific/Auckland").
+  # https://timeapi.io/documentation/iana-timezones
   # Run configure_wittypi.py for validation — it will suggest the closest name if unrecognized.
   timezone: "America/Vancouver"
 
@@ -139,4 +140,3 @@ paths:
   log_dir: '../data/logs'     # Directory for log files
   imu_dir: '../data/imu'      # Directory for IMU CSV files
   gps_dir: '../data/gps'      # Directory for GPS files (future)
-  config_file: 'fishcam_config.yaml'  # This configuration file
