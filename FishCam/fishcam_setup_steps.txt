@@ -77,6 +77,8 @@
 
   A8. Enable persistent system journal (survives reboots)
       ────────────────────────────────────────────────────────────────────────
+      Use the configuration tool by running sudo raspi-config, then go to Advanced Options, select Logging, and choose Persistent.
+
       By default the journal is stored in RAM and lost on reboot.
       Run the following to enable persistent storage:
 

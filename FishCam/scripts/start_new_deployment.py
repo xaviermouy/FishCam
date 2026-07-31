@@ -63,7 +63,7 @@ def main():
     print('  This script prepares the FishCam for a new deployment.')
     print('  Each step will ask for confirmation before making changes.')
 
-    TOTAL_STEPS = 5
+    TOTAL_STEPS = 6
 
     # ── Step 1: Confirm fishcam identity ─────────────────────────────────────
     step(1, TOTAL_STEPS, 'Confirm FishCam identity')
@@ -101,21 +101,34 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 4: Clear system journal ─────────────────────────────────────────
-    step(4, TOTAL_STEPS, 'Clear system journal')
-    print('  Running clear_journal.sh ...')
+    # ── Step 4: Clear WittyPi logs ────────────────────────────────────────────
+    step(4, TOTAL_STEPS, 'Clear WittyPi logs')
+    print('  Running clear_wittypi_logs.sh ...')
     print()
-    rc = run_step(['bash', 'clear_journal.sh'])
+    rc = run_step(['bash', 'clear_wittypi_logs.sh'])
     if rc != 0:
         print()
-        print('  clear_journal.sh exited with an error.')
+        print('  clear_wittypi_logs.sh exited with an error.')
         answer = ask('Continue anyway?', valid=('y', 'n'), default='n')
         if answer != 'y':
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 5: Reboot ───────────────────────────────────────────────────────
-    step(5, TOTAL_STEPS, 'Reboot')
+    # ── Step 5: Clear system journal ─────────────────────────────────────────
+    step(5, TOTAL_STEPS, 'Clear system journal')
+    print('  Running clear_system_logs.sh ...')
+    print()
+    rc = run_step(['bash', 'clear_system_logs.sh'])
+    if rc != 0:
+        print()
+        print('  clear_system_logs.sh exited with an error.')
+        answer = ask('Continue anyway?', valid=('y', 'n'), default='n')
+        if answer != 'y':
+            print('  Aborting.')
+            sys.exit(1)
+
+    # ── Step 6: Reboot ───────────────────────────────────────────────────────
+    step(6, TOTAL_STEPS, 'Reboot')
     print('  A reboot is recommended to:')
     print('    - Test the full startup sequence (cron, fishcamStartup.sh)')
     print('    - Apply the WittyPi schedule from cold')

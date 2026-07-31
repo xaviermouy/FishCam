@@ -37,12 +37,6 @@ mkdir -p "$VIDEO_DIR" "$LOG_DIR" "$IMU_DIR" "$GPS_DIR"
 
 # --- Copy logs from previous boot (each copy is independent; failures are non-fatal) ---
 
-# System kernel journal: OOM kills, I2C errors, kernel panics, watchdog resets
-JOURNAL_LOG="$LOG_DIR/journal_$(hostname)_$(date +%Y%m%dT%H%M%S).log"
-journalctl -b -1 -k --no-pager > "$JOURNAL_LOG" 2>/dev/null \
-    && echo "Journal log saved: $JOURNAL_LOG" \
-    || { echo "WARNING: Could not save journal log (persistent journaling may not be enabled)"; rm -f "$JOURNAL_LOG"; }
-
 # WittyPi logs (cumulative — overwrites previous copy each boot)
 # Copies all .log files found in the WittyPi directory (robust to filename changes across versions)
 if [ -n "$WITTYPI_DIR" ]; then

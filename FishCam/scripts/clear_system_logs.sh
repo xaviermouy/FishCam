@@ -1,11 +1,11 @@
 #!/bin/bash
-# clear_journal.sh
+# clear_system_logs.sh
 #
 # Wipes the systemd journal log.
 # Run manually before each deployment to start with a clean log.
 #
 # Usage:
-#   bash clear_journal.sh
+#   bash clear_system_logs.sh
 
 echo "Journal disk usage before:"
 journalctl --disk-usage
