@@ -77,29 +77,49 @@ class PowerSavingController:
         self._config_led_on = False       # tracks current config LED state to avoid redundant GPIO writes
         self._last_config_led_flash = 0.0 # timestamp of last config LED flash
 
-        # Initialize GPIO
-        try:
-            self.gpio_handle = lgpio.gpiochip_open(0)
+        # Initialize GPIO — retry briefly in case lgpiod hasn't yet released
+        # pins from a previously crashed instance (GPIO busy is transient).
+        _MAX_ATTEMPTS = 5
+        _RETRY_DELAY  = 2.0   # seconds between retries
+        last_exc = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                if self.gpio_handle is not None:
+                    try:
+                        lgpio.gpiochip_close(self.gpio_handle)
+                    except Exception:
+                        pass
+                self.gpio_handle = lgpio.gpiochip_open(0)
 
-            # Configure latch switch as input with internal pull-up
-            # Latched ON (contacts closed): pin reads LOW (0) = config mode
-            # Latched OFF (contacts open):  pin reads HIGH (1) = power saving mode
-            lgpio.gpio_claim_input(self.gpio_handle, self.reed_pin, lgpio.SET_PULL_UP)
+                # Latch switch: input with pull-up
+                # Contacts closed → LOW (0) = config mode
+                # Contacts open   → HIGH (1) = power saving mode
+                lgpio.gpio_claim_input(self.gpio_handle, self.reed_pin, lgpio.SET_PULL_UP)
 
-            # Configure config LED as output
-            lgpio.gpio_claim_output(self.gpio_handle, self.led_pin)
+                # Config LED: output
+                lgpio.gpio_claim_output(self.gpio_handle, self.led_pin)
 
-            logging.info(f"GPIO initialized: Latch switch on GPIO{self.reed_pin}, config LED on GPIO{self.led_pin}")
-        except Exception as e:
-            logging.error(f"Failed to initialize GPIO: {e}")
-            # Cleanup GPIO handle on initialization failure
-            if self.gpio_handle is not None:
-                try:
-                    lgpio.gpiochip_close(self.gpio_handle)
-                except:
-                    pass
-                self.gpio_handle = None
-            raise
+                logging.info(f"GPIO initialized: Latch switch on GPIO{self.reed_pin}, config LED on GPIO{self.led_pin}")
+                break  # success
+
+            except Exception as e:
+                last_exc = e
+                if 'busy' in str(e).lower() and attempt < _MAX_ATTEMPTS - 1:
+                    logging.warning(
+                        f"GPIO busy (attempt {attempt + 1}/{_MAX_ATTEMPTS}) — "
+                        f"retrying in {_RETRY_DELAY:.0f}s. "
+                        f"If this persists: sudo systemctl restart lgpiod"
+                    )
+                    time.sleep(_RETRY_DELAY)
+                else:
+                    logging.error(f"Failed to initialize GPIO: {e}")
+                    if self.gpio_handle is not None:
+                        try:
+                            lgpio.gpiochip_close(self.gpio_handle)
+                        except Exception:
+                            pass
+                        self.gpio_handle = None
+                    raise
 
     def read_latch_switch(self):
         """Read the latch switch state.
