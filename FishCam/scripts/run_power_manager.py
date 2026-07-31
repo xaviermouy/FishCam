@@ -76,6 +76,8 @@ class PowerSavingController:
         self.current_mode = None  # 'config' or 'power_saving'
         self._config_led_on = False       # tracks current config LED state to avoid redundant GPIO writes
         self._last_config_led_flash = 0.0 # timestamp of last config LED flash
+        self._wifi_recovery_failures = 0  # consecutive failed recovery attempts
+        self._WIFI_RECOVERY_MAX = 3       # stop trying after this many consecutive failures
 
         # Initialize GPIO — retry briefly in case lgpiod hasn't yet released
         # pins from a previously crashed instance (GPIO busy is transient).
@@ -221,6 +223,8 @@ class PowerSavingController:
 
         Step 1: soft recovery via nmcli (handles transient drops).
         Step 2: driver reload via rmmod/modprobe (handles brcmfmac hangs).
+            Skipped if the module is locked by another module (e.g. brcmfmac_wcc)
+            — retrying in that state burns CPU without any chance of success.
         Returns True if WiFi is restored after either step.
         """
         logging.warning("WiFi appears down in config mode — attempting recovery")
@@ -235,9 +239,16 @@ class PowerSavingController:
             logging.info("WiFi recovered (soft reset)")
             return True
 
-        # Step 2: driver reload
-        logging.warning("Soft reset failed — reloading brcmfmac driver")
-        self.run_command("sudo rmmod brcmfmac")
+        # Step 2: driver reload — only if rmmod succeeds (module not locked)
+        logging.warning("Soft reset failed — attempting brcmfmac driver reload")
+        rmmod_ok = self.run_command("sudo rmmod brcmfmac")
+        if not rmmod_ok:
+            logging.error(
+                "Cannot unload brcmfmac (module locked — likely held by brcmfmac_wcc). "
+                "Driver reload skipped — WiFi recovery not possible without reboot."
+            )
+            return False
+
         time.sleep(2)
         self.run_command("sudo modprobe brcmfmac")
         time.sleep(5)
@@ -261,8 +272,11 @@ class PowerSavingController:
 
         logging.info(f"Connecting to WiFi network: {self.wifi_ssid}")
 
-        # Use nmcli to connect to WiFi with explicit security type
-        # This will add the network if it doesn't exist, or connect if it does
+        # Delete any existing NetworkManager profile for this SSID before connecting.
+        # A stale or corrupt profile (e.g. missing key-mgmt) would cause every
+        # subsequent connect attempt to fail silently — always start fresh.
+        self.run_command(f"nmcli connection delete \"{self.wifi_ssid}\"")
+
         result = self.run_command(
             f"nmcli device wifi connect \"{self.wifi_ssid}\" password \"{self.wifi_password}\""
         )
@@ -465,6 +479,7 @@ class PowerSavingController:
             logging.info("LED trigger restore skipped (were not disabled)")
 
         self.current_mode = 'config'
+        self._wifi_recovery_failures = 0  # reset on each fresh entry into config mode
         logging.info("Configuration mode activated")
 
     def run(self):
@@ -491,7 +506,19 @@ class PowerSavingController:
                         self.enter_config_mode()
                     elif self.wifi_auto_connect and not self.check_wifi_health():
                         # Already in config mode but WiFi dropped — attempt recovery
-                        self.recover_wifi()
+                        if self._wifi_recovery_failures < self._WIFI_RECOVERY_MAX:
+                            ok = self.recover_wifi()
+                            if ok:
+                                self._wifi_recovery_failures = 0
+                            else:
+                                self._wifi_recovery_failures += 1
+                                if self._wifi_recovery_failures >= self._WIFI_RECOVERY_MAX:
+                                    logging.error(
+                                        f"WiFi recovery failed {self._WIFI_RECOVERY_MAX} times "
+                                        f"consecutively — giving up. WiFi will remain down until "
+                                        f"next mode switch or reboot."
+                                    )
+                        # else: already given up — don't retry, don't log again
                 else:
                     if self.current_mode != 'power_saving':
                         logging.info("Switch OFF - switching to power saving mode")

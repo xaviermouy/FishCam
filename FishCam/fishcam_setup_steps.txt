@@ -77,14 +77,20 @@
 
   A8. Enable persistent system journal (survives reboots)
       ────────────────────────────────────────────────────────────────────────
-      Use the configuration tool by running sudo raspi-config, then go to Advanced Options, select Logging, and choose Persistent.
-
       By default the journal is stored in RAM and lost on reboot.
-      Run the following to enable persistent storage:
+      Enable persistent storage using raspi-config:
 
-          sudo mkdir -p /var/log/journal
-          sudo systemd-tmpfiles --create --prefix /var/log/journal
-          sudo systemctl restart systemd-journald
+          sudo raspi-config
+              > Advanced Options > Logging > Persistent
+
+      Reboot when prompted. Verify persistence by checking that journal
+      files are present on disk:
+
+          ls /var/log/journal/
+
+      NOTE: On Raspberry Pi Zero W, the manual approach (mkdir + systemd-tmpfiles)
+      does NOT work because systemd-journald-flush.service is absent.
+      raspi-config is the only supported method.
 
   A9. Mark the fishcam number on the SD card (with a sharpie)
       ────────────────────────────────────────────────────────────────────────
@@ -107,18 +113,27 @@
 
   B2. Install WittyPi (v4 mini)
       ────────────────────────────────────────────────────────────────────────
-      cd /home/fishcam
+      cd /home/fishcam/Desktop
       wget http://www.uugear.com/repo/WittyPi4/install.sh
       sudo sh install.sh
-      # Installs to /home/fishcam/wittypi — matches wittypi.log_dir in fishcam_config.yaml
+      # Installs to /home/fishcam/Desktop/wittypi — matches wittypi.install_dir in fishcam_config.yaml
+
+      Add the fishcam user to the i2c group so WittyPi scripts run without sudo:
+          sudo usermod -aG i2c fishcam
+      Log out and back in (or reboot) for the group change to take effect.
 
   B3. Configure WittyPi
       ────────────────────────────────────────────────────────────────────────
-      sudo sh /home/fishcam/wittypi/wittyPi.sh
-          > Synchronise network time
-          > View/change other settings
-              > Default state when powered: ON
-              > Set min voltage: 5.5 V
+      Run the FishCam configuration script (no sudo needed):
+
+          cd /home/fishcam/Desktop/FishCam/FishCam/scripts
+          python3 configure_wittypi.py
+
+      The script will:
+          - Sync the RTC from the current system time
+          - Set the on/off schedule (or disable for continuous operation)
+          - Set voltage thresholds (low-voltage cutoff and recovery)
+          - Set the power-cut delay
 
   B4. Set the hostname  →  this becomes the FishCam ID
       ────────────────────────────────────────────────────────────────────────
@@ -193,11 +208,13 @@
       python3 monitor_system.py
       # Press r to refresh immediately, q to quit
 
-  IMU live display  (do NOT run while run_imu.py is active)
+  IMU live display
   ──────────────────────────────────────────────────────────────────
       cd /home/fishcam/Desktop/FishCam/FishCam/scripts
       python3 monitor_imu.py
       # Press q to quit
+      # Safe to run at any time: reads directly from I2C when run_imu.py
+      # is not active, or reads from the live CSV when it is.
 
   Power saving status report
   ──────────────────────────────────────────────────────────────────

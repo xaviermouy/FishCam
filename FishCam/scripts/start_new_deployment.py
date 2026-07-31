@@ -87,6 +87,12 @@ def main():
         if answer != 'y':
             print('  Aborting.')
             sys.exit(1)
+    print()
+    print('  NOTE: If you chose to disable the WittyPi schedule (continuous operation),')
+    print('  the WittyPi log will show:')
+    print('    "I can not find the begin time in the script..."')
+    print('  This is expected — it means WittyPi has no schedule to act on and will')
+    print('  leave the Pi running continuously. It is NOT an error.')
 
     # ── Step 3: Delete recorded data ──────────────────────────────────────────
     step(3, TOTAL_STEPS, 'Delete all recorded data')
