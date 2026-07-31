@@ -132,19 +132,19 @@ def count_recent_errors(lines, minutes=60):
 def check_camera():
     """Return (ok: bool|None, detail: str).  None = indeterminate."""
     try:
-        r = subprocess.run(['vcgencmd', 'get_camera'],
-                           capture_output=True, text=True, timeout=2)
-        out = r.stdout.strip()
-        if 'detected=1' in out:
+        r = subprocess.run(['libcamera-hello', '--list-cameras'],
+                           capture_output=True, text=True, timeout=5)
+        out = (r.stdout + r.stderr).strip()
+        if 'Available cameras' in out and '0 :' in out:
             return True, 'Detected'
-        if 'detected=0' in out:
+        if 'No cameras available' in out:
             return False, 'Not detected'
-        return None, out or 'Unknown'
+        return None, 'Unknown'
     except (FileNotFoundError, subprocess.TimeoutExpired):
         # Fallback: check /dev/video* nodes
         if list(Path('/dev').glob('video*')):
             return True, '/dev/video* present'
-        return None, 'vcgencmd unavailable'
+        return None, 'libcamera unavailable'
 
 
 def check_i2c(address):
