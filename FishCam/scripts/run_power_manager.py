@@ -28,15 +28,40 @@ Configuration Mode (LED solid ON):
 - Normal CPU operation
 """
 
+import csv
 import lgpio
 import time
 import subprocess
 import logging
 import sys
 import os
+from datetime import datetime
 from pathlib import Path
 import signal
 import config
+
+
+def read_wittypi_voltage(install_dir):
+    """Read WittyPi input voltage via utilities.sh.
+
+    Sources utilities.sh and reads the I2C_CONF_VIN register via the
+    WittyPi's own i2c_read function. Returns voltage as a float (V),
+    or None if the read fails (WittyPi not connected, utilities.sh missing, etc.).
+    """
+    try:
+        r = subprocess.run(
+            ['bash', '-c',
+             f'source "{install_dir}/utilities.sh" && '
+             f'echo $(i2c_read 0x01 $I2C_MC_ADDRESS $I2C_CONF_VIN)'],
+            capture_output=True, text=True, timeout=5, cwd=str(install_dir)
+        )
+        if r.returncode == 0:
+            raw = r.stdout.strip()
+            if raw:
+                return int(raw, 0) / 10.0
+    except Exception:
+        pass
+    return None
 
 
 class PowerSavingController:
@@ -48,7 +73,9 @@ class PowerSavingController:
                  disable_usb=False, throttle_cpu=True, stop_services=True,
                  disable_led_triggers=True, wifi_auto_connect=False,
                  wifi_ssid='', wifi_password='',
-                 cpu_freq_power_saving=800, cpu_freq_config=1000):
+                 cpu_freq_power_saving=800, cpu_freq_config=1000,
+                 wittypi_install_dir=None, voltage_log_path=None,
+                 voltage_log_interval_min=10):
         self.reed_pin = reed_pin
         self.led_pin = led_pin
         self.check_interval = check_interval
@@ -78,6 +105,12 @@ class PowerSavingController:
         self._last_config_led_flash = 0.0 # timestamp of last config LED flash
         self._wifi_recovery_failures = 0  # consecutive failed recovery attempts
         self._WIFI_RECOVERY_MAX = 3       # stop trying after this many consecutive failures
+
+        # Voltage logging
+        self.wittypi_install_dir    = wittypi_install_dir
+        self.voltage_log_path       = voltage_log_path
+        self.voltage_log_interval_s = voltage_log_interval_min * 60
+        self._last_voltage_log      = 0.0
 
         # Initialize GPIO — retry briefly in case lgpiod hasn't yet released
         # pins from a previously crashed instance (GPIO busy is transient).
@@ -482,6 +515,29 @@ class PowerSavingController:
         self._wifi_recovery_failures = 0  # reset on each fresh entry into config mode
         logging.info("Configuration mode activated")
 
+    def _log_voltage(self):
+        """Read WittyPi input voltage and append a row to the voltage CSV log."""
+        if not self.wittypi_install_dir or not self.voltage_log_path:
+            return
+        voltage = read_wittypi_voltage(self.wittypi_install_dir)
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if voltage is not None:
+            logging.info(f"Input voltage: {voltage:.1f} V")
+        else:
+            logging.warning("Could not read input voltage from WittyPi")
+
+        write_header = not Path(self.voltage_log_path).exists()
+        try:
+            with open(self.voltage_log_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(['timestamp', 'voltage_v', 'mode'])
+                writer.writerow([ts,
+                                  f'{voltage:.1f}' if voltage is not None else '',
+                                  self.current_mode or ''])
+        except OSError as e:
+            logging.warning(f"Could not write voltage log: {e}")
+
     def run(self):
         """Main loop - monitor latch switch and manage power modes"""
         logging.info("Power saving controller started")
@@ -525,6 +581,12 @@ class PowerSavingController:
                         self.enter_power_saving_mode()
 
                 self.update_config_led()
+
+                # Periodic voltage logging
+                now_mono = time.monotonic()
+                if now_mono - self._last_voltage_log >= self.voltage_log_interval_s:
+                    self._log_voltage()
+                    self._last_voltage_log = now_mono
 
                 time.sleep(self.check_interval)
 
@@ -575,7 +637,8 @@ def main():
     # Load configuration
     try:
         power_saving_config = config.get_power_saving_settings()
-        network_cfg = config.get_network_settings()
+        network_cfg         = config.get_network_settings()
+        wittypi_cfg         = config.get_wittypi_settings()
     except Exception as e:
         logging.error(f"Failed to load configuration: {e}")
         sys.exit(1)
@@ -591,6 +654,10 @@ def main():
     logging.info(f"Latch switch on GPIO {power_saving_config['reed_switch_pin']}")
     logging.info(f"Status LED on GPIO {power_saving_config['led_pin']}")
     logging.info(f"Check interval: {power_saving_config['check_interval']}s")
+
+    # Voltage log path
+    voltage_log_path = log_dir / f'voltage_{fishcam_id}.csv'
+    logging.info(f"Voltage log: {voltage_log_path}  (every {wittypi_cfg['voltage_log_interval_min']} min)")
 
     # Log WiFi auto-connect settings
     if network_cfg['wifi_auto_connect']:
@@ -634,7 +701,11 @@ def main():
         wifi_password=network_cfg['wifi_password'],
         # CPU frequency settings
         cpu_freq_power_saving=power_saving_config['cpu_freq_power_saving'],
-        cpu_freq_config=power_saving_config['cpu_freq_config']
+        cpu_freq_config=power_saving_config['cpu_freq_config'],
+        # Voltage logging
+        wittypi_install_dir=wittypi_cfg['install_dir'],
+        voltage_log_path=voltage_log_path,
+        voltage_log_interval_min=wittypi_cfg['voltage_log_interval_min'],
     )
 
     # Register signal handlers

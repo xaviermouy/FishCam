@@ -111,8 +111,9 @@ class FishCamConfig:
             'install_dir':          wittypi.get('install_dir', '/home/fishcam/wittypi'),
             'i2c_address':          wittypi.get('i2c_address', 0x08),
             'power_cut_delay_sec':  wittypi.get('power_cut_delay_sec', 60),
-            'low_voltage_cutoff_v': wittypi.get('low_voltage_cutoff_v', 0),
-            'recovery_voltage_v':   wittypi.get('recovery_voltage_v', 0),
+            'low_voltage_cutoff_v':       wittypi.get('low_voltage_cutoff_v', 0),
+            'recovery_voltage_v':         wittypi.get('recovery_voltage_v', 0),
+            'voltage_log_interval_min':   wittypi.get('voltage_log_interval_min', 10),
             'timezone':             wittypi.get('timezone', 'UTC'),
             'deployment': {
                 'start': deployment.get('start', ''),

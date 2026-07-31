@@ -106,6 +106,9 @@ wittypi:
   low_voltage_cutoff_v: 0              # hard power cut if Vin drops below this (e.g. 5.8 for LiPo)
   recovery_voltage_v: 0               # won't power on again until Vin exceeds this (e.g. 6.2)
 
+  # Voltage logging — input voltage is read from WittyPi and appended to a CSV log
+  voltage_log_interval_min: 10        # how often to log input voltage (minutes)
+
   # Deployment timezone — Pi must always run UTC; times below are in this local timezone.
   # Must be a valid IANA timezone name (e.g. "America/Vancouver", "Pacific/Auckland").
   # https://timeapi.io/documentation/iana-timezones

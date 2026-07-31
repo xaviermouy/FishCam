@@ -133,6 +133,10 @@ _camera_cache        = None
 _camera_cache_time   = 0.0
 _CAMERA_CACHE_TTL    = 60  # seconds — libcamera-hello is slow; don't run every cycle
 
+_voltage_cache       = None   # float (V) or None
+_voltage_cache_time  = 0.0
+_VOLTAGE_CACHE_TTL   = 30     # seconds
+
 def check_camera():
     """Return (ok: bool|None, detail: str).  None = indeterminate.
 
@@ -162,6 +166,35 @@ def check_camera():
     _camera_cache      = result
     _camera_cache_time = time.time()
     return result
+
+
+def read_wittypi_voltage(install_dir):
+    """Read WittyPi input voltage via utilities.sh. Result is cached for _VOLTAGE_CACHE_TTL s.
+
+    Returns float (V) or None if the WittyPi is unreachable or utilities.sh is missing.
+    """
+    global _voltage_cache, _voltage_cache_time
+    if _voltage_cache_time and (time.time() - _voltage_cache_time) < _VOLTAGE_CACHE_TTL:
+        return _voltage_cache
+
+    voltage = None
+    try:
+        r = subprocess.run(
+            ['bash', '-c',
+             f'source "{install_dir}/utilities.sh" && '
+             f'echo $(i2c_read 0x01 $I2C_MC_ADDRESS $I2C_CONF_VIN)'],
+            capture_output=True, text=True, timeout=5, cwd=str(install_dir)
+        )
+        if r.returncode == 0:
+            raw = r.stdout.strip()
+            if raw:
+                voltage = int(raw, 0) / 10.0
+    except Exception:
+        pass
+
+    _voltage_cache      = voltage
+    _voltage_cache_time = time.time()
+    return voltage
 
 
 def check_i2c(address):
@@ -257,7 +290,7 @@ def storage_info(paths, script_dir):
 
 # ── Data collection ───────────────────────────────────────────────────────────
 
-def collect(script_dir, fishcam_id, paths, imu_cfg):
+def collect(script_dir, fishcam_id, paths, imu_cfg, wittypi_cfg):
     now = time.time()
     data = {'time': datetime.now(), 'fishcam_id': fishcam_id}
 
@@ -285,6 +318,7 @@ def collect(script_dir, fishcam_id, paths, imu_cfg):
         ('buzzer',        log_dir / f'buzzer_{fishcam_id}.log'),
         ('power_manager', log_dir / f'power_saving_{fishcam_id}.log'),
         ('network',       log_dir / f'network_{fishcam_id}.log'),
+        ('voltage',       log_dir / f'voltage_{fishcam_id}.csv'),
     ]
     data['logs'] = []
     for name, path in log_sources:
@@ -298,9 +332,12 @@ def collect(script_dir, fishcam_id, paths, imu_cfg):
         })
 
     # Hardware
-    data['camera']  = check_camera()
-    data['imu_bus'] = check_i2c(imu_cfg['i2c_address'])
+    data['camera']   = check_camera()
+    data['imu_bus']  = check_i2c(imu_cfg['i2c_address'])
     data['imu_addr'] = imu_cfg['i2c_address']
+    data['voltage']  = read_wittypi_voltage(wittypi_cfg['install_dir'])
+    data['voltage_low_v'] = wittypi_cfg['low_voltage_cutoff_v']
+    data['voltage_rec_v'] = wittypi_cfg['recovery_voltage_v']
 
     # System
     data['cpu_temp'] = cpu_temp()
@@ -372,6 +409,7 @@ def render(stdscr, data, secs_to_refresh, C):
         'buzzer':        'buzzer       ',
         'power_manager': 'power_manager',
         'network':       'network      ',
+        'voltage':       'voltage      ',
     }
     for lg in data['logs']:
         label = LOG_LABELS[lg['name']]
@@ -412,6 +450,26 @@ def render(stdscr, data, secs_to_refresh, C):
     imu_str = f'I2C/IMU: {imu_sym} {imu_detail}'
     p(r, 0,        cam_str, cam_attr)
     p(r, max(len(cam_str) + 4, 32), imu_str, imu_attr)
+    r += 1
+
+    # Voltage
+    v      = data['voltage']
+    low_v  = data['voltage_low_v']
+    rec_v  = data['voltage_rec_v']
+    if v is not None:
+        v_str = f'  Voltage: {v:.1f} V'
+        if low_v > 0 and v < low_v:
+            v_attr = RED | BOLD
+        elif rec_v > 0 and v < rec_v:
+            v_attr = YELLOW | BOLD
+        else:
+            v_attr = GREEN
+    else:
+        v_str  = '  Voltage: n/a'
+        v_attr = YELLOW
+    thresh_str = f'(cutoff {low_v} V / recovery {rec_v} V)' if low_v > 0 else '(protection disabled)'
+    p(r, 0, v_str, v_attr)
+    p(r, max(len(v_str) + 2, 22), thresh_str)
     r += 1
 
     # CPU temp + freq + uptime
@@ -468,10 +526,11 @@ def run_monitor(stdscr):
         'cyan':   curses.color_pair(4),
     }
 
-    script_dir = Path(__file__).parent
-    fishcam_id = config.get_fishcam_id()
-    paths      = config.get_paths()
-    imu_cfg    = config.get_imu_settings()
+    script_dir  = Path(__file__).parent
+    fishcam_id  = config.get_fishcam_id()
+    paths       = config.get_paths()
+    imu_cfg     = config.get_imu_settings()
+    wittypi_cfg = config.get_wittypi_settings()
 
     last_refresh = 0.0
     data = None
@@ -485,7 +544,7 @@ def run_monitor(stdscr):
 
         force = key in (ord('r'), ord('R'))
         if force or (now - last_refresh) >= REFRESH_INTERVAL:
-            data = collect(script_dir, fishcam_id, paths, imu_cfg)
+            data = collect(script_dir, fishcam_id, paths, imu_cfg, wittypi_cfg)
             last_refresh = time.monotonic()
 
         if data:
