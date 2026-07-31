@@ -103,7 +103,7 @@ def check_wittypi_i2c(addr):
 
 def check_scripts(install_dir):
     results = []
-    for name in ('syncTime.sh', 'runScript.sh'):
+    for name in ('runScript.sh', 'utilities.sh'):
         p = Path(install_dir) / name
         ok = p.exists()
         msg = f"Found {name}" if ok else f"Missing: {p}"
@@ -404,19 +404,47 @@ def generate_always_on_schedule():
 # ─── WittyPi operations ───────────────────────────────────────────────────────
 
 def sync_rtc_from_system(install_dir):
-    """Synchronise the WittyPi RTC from the system clock via syncTime.sh.
+    """Synchronise the WittyPi RTC (DS3231 at I2C 0x68) from the system clock.
+
+    Writes directly to the DS3231 RTC registers via i2cset — the same approach
+    used internally by WittyPi's utilities.sh. This avoids dependency on a
+    specific WittyPi script name (syncTime.sh is absent in some versions).
 
     This function is intentionally standalone so that a future run_gps.py can
     call it after obtaining a valid GPS fix to keep the RTC accurate during
     deployment without needing to re-run the full setup script.
     """
-    r = subprocess.run(
-        ['sudo', 'bash', 'syncTime.sh'],
-        cwd=install_dir, capture_output=True, text=True
+    now = datetime.now(timezone.utc)
+
+    def to_bcd(n):
+        return (n // 10) << 4 | (n % 10)
+
+    # DS3231 RTC register map (I2C address 0x68, bus 1)
+    # Registers 0x00–0x06 hold time in BCD: seconds, minutes, hours,
+    # day-of-week, date, month, year (2-digit).
+    # Hour byte: bit 6 = 0 → 24-hour mode (bit 6 = 1 would be 12-hour).
+    dow = now.isoweekday() % 7 + 1   # DS3231: 1=Sunday … 7=Saturday
+    writes = [
+        (0x00, to_bcd(now.second)),
+        (0x01, to_bcd(now.minute)),
+        (0x02, to_bcd(now.hour)),     # bit 6 clear → 24 h mode
+        (0x03, dow),
+        (0x04, to_bcd(now.day)),
+        (0x05, to_bcd(now.month)),
+        (0x06, to_bcd(now.year % 100)),
+    ]
+
+    for reg, val in writes:
+        r = _run(f"i2cset -y 1 0x68 {reg:#04x} {val:#04x}")
+        if r.returncode != 0:
+            return False, (
+                f"Failed to write DS3231 register 0x{reg:02X}: {r.stderr.strip()}"
+            )
+
+    return True, (
+        f"WittyPi RTC synchronised from system clock  "
+        f"({now.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
     )
-    if r.returncode == 0:
-        return True, "WittyPi RTC synchronised from system clock"
-    return False, f"syncTime.sh failed: {(r.stderr or r.stdout).strip()}"
 
 
 def save_and_load_schedule(install_dir, content):
