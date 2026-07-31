@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""
+FishCam New Deployment Setup
+
+Walks through all pre-deployment steps in order:
+  1. Confirm FishCam unit identity
+  2. Configure WittyPi (schedule, RTC sync, voltage thresholds)
+  3. Delete all recorded data
+  4. Clear the system journal
+  5. Reboot (optional but recommended)
+
+Run once before each deployment:
+    python3 start_new_deployment.py
+"""
+
+import subprocess
+import sys
+from pathlib import Path
+
+import config
+
+SCRIPT_DIR = Path(__file__).parent
+
+
+def banner(title):
+    print()
+    print('=' * 68)
+    print(f'  {title}')
+    print('=' * 68)
+
+
+def step(n, total, title):
+    print()
+    print(f'  ── Step {n}/{total}: {title}')
+    print('  ' + '─' * 50)
+
+
+def ask(prompt, valid=('y', 'n'), default=None):
+    """Prompt the user for a single-character answer. Returns lowercase char."""
+    hint = '/'.join(v.upper() if v == default else v for v in valid)
+    while True:
+        try:
+            answer = input(f'  {prompt} [{hint}]  ').strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print('\n  Aborted.')
+            sys.exit(0)
+        if not answer and default:
+            return default
+        if answer in valid:
+            return answer
+        print(f'  Please enter one of: {", ".join(valid)}')
+
+
+def run_step(cmd, cwd=None):
+    """Run a command with full stdin/stdout passthrough. Returns exit code."""
+    result = subprocess.run(cmd, cwd=cwd or SCRIPT_DIR)
+    return result.returncode
+
+
+def main():
+    banner('FishCam New Deployment Setup')
+    print()
+    print('  This script prepares the FishCam for a new deployment.')
+    print('  Each step will ask for confirmation before making changes.')
+
+    TOTAL_STEPS = 5
+
+    # ── Step 1: Confirm fishcam identity ─────────────────────────────────────
+    step(1, TOTAL_STEPS, 'Confirm FishCam identity')
+    fishcam_id = config.get_fishcam_id()
+    print(f'  FishCam ID (hostname) : {fishcam_id}')
+    print()
+    answer = ask(f'Is this the correct unit?', valid=('y', 'n'))
+    if answer != 'y':
+        print('  Please run this script on the correct unit. Aborting.')
+        sys.exit(0)
+
+    # ── Step 2: Configure WittyPi ─────────────────────────────────────────────
+    step(2, TOTAL_STEPS, 'Configure WittyPi')
+    print('  Running configure_wittypi.py ...')
+    print()
+    rc = run_step(['python3', 'configure_wittypi.py'])
+    if rc != 0:
+        print()
+        print('  configure_wittypi.py exited with an error.')
+        answer = ask('Continue anyway?', valid=('y', 'n'), default='n')
+        if answer != 'y':
+            print('  Aborting.')
+            sys.exit(1)
+
+    # ── Step 3: Delete recorded data ──────────────────────────────────────────
+    step(3, TOTAL_STEPS, 'Delete all recorded data')
+    print('  Running delete_data.py ...')
+    print()
+    rc = run_step(['python3', 'delete_data.py'])
+    if rc != 0:
+        print()
+        print('  delete_data.py exited with an error.')
+        answer = ask('Continue anyway?', valid=('y', 'n'), default='n')
+        if answer != 'y':
+            print('  Aborting.')
+            sys.exit(1)
+
+    # ── Step 4: Clear system journal ─────────────────────────────────────────
+    step(4, TOTAL_STEPS, 'Clear system journal')
+    print('  Running clear_journal.sh ...')
+    print()
+    rc = run_step(['bash', 'clear_journal.sh'])
+    if rc != 0:
+        print()
+        print('  clear_journal.sh exited with an error.')
+        answer = ask('Continue anyway?', valid=('y', 'n'), default='n')
+        if answer != 'y':
+            print('  Aborting.')
+            sys.exit(1)
+
+    # ── Step 5: Reboot ───────────────────────────────────────────────────────
+    step(5, TOTAL_STEPS, 'Reboot')
+    print('  A reboot is recommended to:')
+    print('    - Test the full startup sequence (cron, fishcamStartup.sh)')
+    print('    - Apply the WittyPi schedule from cold')
+    print('    - Confirm RTC → system clock sync works at boot')
+    print()
+    answer = ask('Reboot now?', valid=('y', 'n'), default='y')
+    if answer == 'y':
+        print()
+        print('  Rebooting...')
+        subprocess.run(['sudo', 'reboot'])
+    else:
+        print()
+        print('  Skipped. Remember to reboot before deploying.')
+
+    print()
+    print('=' * 68)
+    print('  Deployment setup complete.')
+    print('=' * 68)
+    print()
+
+
+if __name__ == '__main__':
+    main()
