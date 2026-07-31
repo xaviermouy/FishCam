@@ -5,6 +5,16 @@
 # Initial delay to let system stabilize
 sleep 10
 
+# Sync system clock from WittyPi RTC (DS3231) before anything time-sensitive runs
+WITTYPI_UTILS="/home/fishcam/Desktop/wittypi/utilities.sh"
+if [ -f "$WITTYPI_UTILS" ]; then
+    bash -c "source \"$WITTYPI_UTILS\" && rtc_to_system" \
+        && echo "System clock synced from WittyPi RTC" \
+        || echo "WARNING: Failed to sync system clock from WittyPi RTC (non-fatal)"
+else
+    echo "WARNING: WittyPi utilities.sh not found — skipping RTC sync"
+fi
+
 # Resolve script directory so this works regardless of where cron calls it from
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
