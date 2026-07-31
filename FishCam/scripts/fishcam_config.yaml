@@ -97,10 +97,10 @@ imu:
 
 # WittyPi Settings
 wittypi:
-  install_dir: '/home/fishcam/wittypi'  # WittyPi installation directory (scripts + logs)
-  i2c_address: 0x08                     # WittyPi v4 mini fixed I2C address
-  power_cut_delay_sec: 60               # seconds WittyPi waits after SIGTERM before hard power cut
-                                        # must be long enough for a clean Pi shutdown (~15s) + margin
+  install_dir: '/home/fishcam/Desktop/wittypi'  # WittyPi installation directory (scripts + logs)
+  i2c_address: 0x08                             # WittyPi v4 mini fixed I2C address
+  power_cut_delay_sec: 60                       # seconds WittyPi waits after SIGTERM before hard power cut
+                                                # must be long enough for a clean Pi shutdown (~15s) + margin
 
   # Voltage protection — set both to 0 to disable (e.g. mains-powered units)
   low_voltage_cutoff_v: 0              # hard power cut if Vin drops below this (e.g. 5.8 for LiPo)

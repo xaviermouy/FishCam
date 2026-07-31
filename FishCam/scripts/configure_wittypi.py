@@ -75,8 +75,9 @@ def _print_check(ok, msg, warn=False):
 def check_utc_timezone():
     r = _run("timedatectl show --property=Timezone --value")
     tz = r.stdout.strip()
-    if tz == 'UTC':
-        return True, "System timezone is UTC"
+    # Accept all equivalent UTC zone names
+    if tz in ('UTC', 'Etc/UTC', 'UTC0', 'Universal', 'Zulu'):
+        return True, f"System timezone is UTC ({tz})"
     return False, (
         f"System timezone is '{tz}' — must be UTC. "
         f"Fix with: sudo timedatectl set-timezone UTC"
