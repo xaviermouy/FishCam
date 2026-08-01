@@ -63,6 +63,10 @@ fi
 # Connect to WiFi if configured (skips automatically if power saving mode is enabled)
 python3 ./run_network.py
 
+# Sync WittyPi RTC from NTP if WiFi is up and enabled in config
+# Skips instantly if WiFi is down (power saving mode) or interval not elapsed
+python3 ./sync_rtc.py
+
 # Start power saving mode controller in background
 if pgrep -f "run_power_manager.py" > /dev/null; then
     echo "Power saving controller already running, skipping..."

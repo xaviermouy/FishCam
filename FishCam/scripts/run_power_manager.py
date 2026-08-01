@@ -39,29 +39,7 @@ from datetime import datetime
 from pathlib import Path
 import signal
 import config
-
-
-def read_wittypi_voltage(install_dir):
-    """Read WittyPi input voltage via utilities.sh.
-
-    Sources utilities.sh and reads the I2C_CONF_VIN register via the
-    WittyPi's own i2c_read function. Returns voltage as a float (V),
-    or None if the read fails (WittyPi not connected, utilities.sh missing, etc.).
-    """
-    try:
-        r = subprocess.run(
-            ['bash', '-c',
-             f'source "{install_dir}/utilities.sh" && '
-             f'echo $(i2c_read 0x01 $I2C_MC_ADDRESS $I2C_CONF_VIN)'],
-            capture_output=True, text=True, timeout=5, cwd=str(install_dir)
-        )
-        if r.returncode == 0:
-            raw = r.stdout.strip()
-            if raw:
-                return int(raw, 0) / 10.0
-    except Exception:
-        pass
-    return None
+from wittypi_utils import read_wittypi_voltage
 
 
 class PowerSavingController:

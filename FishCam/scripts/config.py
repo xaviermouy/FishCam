@@ -113,7 +113,10 @@ class FishCamConfig:
             'power_cut_delay_sec':  wittypi.get('power_cut_delay_sec', 60),
             'low_voltage_cutoff_v':       wittypi.get('low_voltage_cutoff_v', 0),
             'recovery_voltage_v':         wittypi.get('recovery_voltage_v', 0),
-            'voltage_log_interval_min':   wittypi.get('voltage_log_interval_min', 10),
+            'voltage_log_interval_min':      wittypi.get('voltage_log_interval_min', 10),
+            'auto_sync_rtc_from_internet':   wittypi.get('auto_sync_rtc_from_internet', True),
+            'auto_sync_rtc_from_gps':        wittypi.get('auto_sync_rtc_from_gps', False),
+            'rtc_sync_min_interval_min':     wittypi.get('rtc_sync_min_interval_min', 15),
             'timezone':             wittypi.get('timezone', 'UTC'),
             'deployment': {
                 'start': deployment.get('start', ''),

@@ -109,6 +109,12 @@ wittypi:
   # Voltage logging — input voltage is read from WittyPi and appended to a CSV log
   voltage_log_interval_min: 10        # how often to log input voltage (minutes)
 
+  # Automatic RTC sync — keeps the WittyPi RTC accurate during deployment
+  # A minimum interval is enforced to avoid unnecessary I2C writes.
+  auto_sync_rtc_from_internet: true   # sync RTC from NTP at boot if WiFi is up
+  auto_sync_rtc_from_gps: false       # sync RTC from GPS fix (requires GPS module)
+  rtc_sync_min_interval_min: 15       # minimum minutes between RTC syncs from any source
+
   # Deployment timezone — Pi must always run UTC; times below are in this local timezone.
   # Must be a valid IANA timezone name (e.g. "America/Vancouver", "Pacific/Auckland").
   # https://timeapi.io/documentation/iana-timezones

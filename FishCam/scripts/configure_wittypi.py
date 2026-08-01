@@ -33,6 +33,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 import config
+from wittypi_utils import run_wittypi_func, sync_rtc_from_system
 
 SCHEDULE_FILENAME    = 'schedule.wpi'
 TIMELINE_CHARS       = 72          # width of the 24 h bar (1 char = 20 min)
@@ -393,41 +394,6 @@ def generate_always_on_schedule():
 
 # ─── WittyPi operations ───────────────────────────────────────────────────────
 
-def _run_wittypi_func(install_dir, bash_cmd):
-    """Source utilities.sh and run a WittyPi bash function.
-
-    Args:
-        install_dir: Path to the WittyPi installation directory.
-        bash_cmd: Bash command to run after sourcing utilities.sh.
-
-    Returns:
-        (ok: bool, output: str)
-    """
-    r = subprocess.run(
-        ['bash', '-c', f'source "{install_dir}/utilities.sh" && {bash_cmd}'],
-        capture_output=True, text=True, cwd=install_dir
-    )
-    return r.returncode == 0, (r.stdout + r.stderr).strip()
-
-
-def sync_rtc_from_system(install_dir):
-    """Synchronise the WittyPi RTC from the system clock via utilities.sh.
-
-    Calls WittyPi's own system_to_rtc() function so that all I2C
-    communication goes through the WittyPi MC at 0x08 — the correct path
-    for this hardware.
-
-    This function is intentionally standalone so that a future run_gps.py
-    can call it after obtaining a valid GPS fix to keep the RTC accurate
-    during deployment without needing to re-run the full setup script.
-    """
-    ok, out = _run_wittypi_func(install_dir, 'system_to_rtc')
-    now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-    if ok:
-        return True, f"WittyPi RTC synchronised from system clock  ({now_str} UTC)"
-    return False, f"system_to_rtc failed: {out}"
-
-
 def save_and_load_schedule(install_dir, content):
     """Write schedule.wpi and load it into WittyPi via runScript.sh."""
     schedule_path = Path(install_dir) / SCHEDULE_FILENAME
@@ -463,7 +429,7 @@ def write_i2c_params(install_dir, wittypi_cfg):
     # flag 0x01 = write byte; $I2C_MC_ADDRESS and $I2C_CONF_POWER_CUT_DELAY
     # are defined in utilities.sh itself.
     clamped = min(int(delay_s), 255)
-    ok, out = _run_wittypi_func(
+    ok, out = run_wittypi_func(
         install_dir,
         f'i2c_write 0x01 $I2C_MC_ADDRESS $I2C_CONF_POWER_CUT_DELAY {clamped}'
     )
@@ -474,8 +440,8 @@ def write_i2c_params(install_dir, wittypi_cfg):
 
     # Voltage protection — use WittyPi's own threshold functions
     if low_v == 0 and rec_v == 0:
-        ok1, out1 = _run_wittypi_func(install_dir, 'clear_low_voltage_threshold')
-        ok2, out2 = _run_wittypi_func(install_dir, 'clear_recovery_voltage_threshold')
+        ok1, out1 = run_wittypi_func(install_dir, 'clear_low_voltage_threshold')
+        ok2, out2 = run_wittypi_func(install_dir, 'clear_recovery_voltage_threshold')
         results.append((ok1 and ok2,
             "Voltage protection disabled (thresholds cleared)"
             + ('' if (ok1 and ok2) else f"  FAILED: {out1} {out2}".strip())
@@ -483,12 +449,12 @@ def write_i2c_params(install_dir, wittypi_cfg):
     else:
         raw_low = round(low_v * 10)
         raw_rec = round(rec_v * 10)
-        ok, out = _run_wittypi_func(install_dir, f'set_low_voltage_threshold {raw_low}')
+        ok, out = run_wittypi_func(install_dir, f'set_low_voltage_threshold {raw_low}')
         results.append((ok,
             f"Low-voltage cutoff {low_v} V written to WittyPi"
             + ('' if ok else f"  FAILED: {out}")
         ))
-        ok, out = _run_wittypi_func(install_dir, f'set_recovery_voltage_threshold {raw_rec}')
+        ok, out = run_wittypi_func(install_dir, f'set_recovery_voltage_threshold {raw_rec}')
         results.append((ok,
             f"Recovery voltage {rec_v} V written to WittyPi"
             + ('' if ok else f"  FAILED: {out}")

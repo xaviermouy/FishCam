@@ -47,7 +47,7 @@ echo ""
 deleted=0
 failed=0
 for f in "${LOG_FILES[@]}"; do
-    if rm "$f" 2>/dev/null; then
+    if sudo rm "$f" 2>/dev/null; then
         deleted=$((deleted + 1))
     else
         echo "WARNING: Could not delete $(basename "$f")"

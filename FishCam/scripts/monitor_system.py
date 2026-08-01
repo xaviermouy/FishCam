@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import config
+from wittypi_utils import read_wittypi_voltage as _read_wittypi_voltage
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -169,29 +170,18 @@ def check_camera():
 
 
 def read_wittypi_voltage(install_dir):
-    """Read WittyPi input voltage via utilities.sh. Result is cached for _VOLTAGE_CACHE_TTL s.
+    """Read WittyPi input voltage. Result is cached for _VOLTAGE_CACHE_TTL s.
 
-    Returns float (V) or None if the WittyPi is unreachable or utilities.sh is missing.
+    Delegates the actual I2C read to wittypi_utils.read_wittypi_voltage.
+    The cache avoids running a subprocess on every 10-second dashboard refresh.
+
+    Returns float (V) or None if the WittyPi is unreachable.
     """
     global _voltage_cache, _voltage_cache_time
     if _voltage_cache_time and (time.time() - _voltage_cache_time) < _VOLTAGE_CACHE_TTL:
         return _voltage_cache
 
-    voltage = None
-    try:
-        r = subprocess.run(
-            ['bash', '-c',
-             f'source "{install_dir}/utilities.sh" && '
-             f'echo $(i2c_read 0x01 $I2C_MC_ADDRESS $I2C_CONF_VIN)'],
-            capture_output=True, text=True, timeout=5, cwd=str(install_dir)
-        )
-        if r.returncode == 0:
-            raw = r.stdout.strip()
-            if raw:
-                voltage = int(raw, 0) / 10.0
-    except Exception:
-        pass
-
+    voltage             = _read_wittypi_voltage(install_dir)
     _voltage_cache      = voltage
     _voltage_cache_time = time.time()
     return voltage

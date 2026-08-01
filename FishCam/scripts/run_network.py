@@ -27,11 +27,25 @@ import config
 
 def connect_wifi(ssid, password):
     """Attempt to connect to a WiFi network via nmcli. Returns True on success."""
+    # Delete stale profile — a corrupt entry causes silent failures every time.
+    subprocess.run(
+        f'nmcli connection delete "{ssid}"',
+        shell=True, capture_output=True, text=True, timeout=10,
+    )
+
+    # Force a fresh scan so the network is visible before connecting.
+    subprocess.run(
+        'nmcli device wifi rescan',
+        shell=True, capture_output=True, text=True, timeout=10,
+    )
+    import time; time.sleep(3)  # allow scan results to populate
+
+    # Single-quote the password to prevent the shell from expanding special
+    # characters such as $, !, etc. that are common in passwords.
+    safe_pw = password.replace("'", "'\\''")
     result = subprocess.run(
-        f'nmcli device wifi connect "{ssid}" password "{password}"',
-        shell=True,
-        capture_output=True,
-        text=True,
+        f"nmcli device wifi connect \"{ssid}\" password '{safe_pw}'",
+        shell=True, capture_output=True, text=True, timeout=45,
     )
     if result.returncode == 0:
         logging.info(f"Connected to WiFi network: {ssid}")
