@@ -94,24 +94,24 @@ def record_rtc_sync(state_file):
 def read_wittypi_voltage(install_dir):
     """Read WittyPi input voltage via utilities.sh.
 
-    Sources utilities.sh and reads the I2C_CONF_VIN register via the
-    WittyPi's own i2c_read function.
+    Reads the raw Vin register using WittyPi's own i2c_read function.
+    The Vin calibration adjustment (set via WittyPi menu > other settings >
+    Vin adjustment) is only applied in wittyPi.sh, not in utilities.sh, so
+    it cannot be retrieved here. The raw reading may differ from the WittyPi
+    menu display by the configured adjustment offset (typically ~0.2 V).
 
     Returns:
         float: voltage in volts, or None if the read fails (WittyPi not
                connected, utilities.sh missing, I2C error, etc.)
     """
+    bash_cmd = (
+        'vin=$(i2c_read 0x01 $I2C_MC_ADDRESS $I2C_CONF_VIN) && '
+        'awk "BEGIN{printf \\"%.1f\\", $vin/10}"'
+    )
     try:
-        r = subprocess.run(
-            ['bash', '-c',
-             f'source "{install_dir}/utilities.sh" && '
-             f'echo $(i2c_read 0x01 $I2C_MC_ADDRESS $I2C_CONF_VIN)'],
-            capture_output=True, text=True, timeout=5, cwd=str(install_dir)
-        )
-        if r.returncode == 0:
-            raw = r.stdout.strip()
-            if raw:
-                return int(raw, 0) / 10.0
+        ok, out = run_wittypi_func(install_dir, bash_cmd)
+        if ok and out.strip():
+            return float(out.strip())
     except Exception:
         pass
     return None

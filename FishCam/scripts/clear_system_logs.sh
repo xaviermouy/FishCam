@@ -7,17 +7,24 @@
 # Usage:
 #   bash clear_system_logs.sh
 
-echo "Journal disk usage before:"
-journalctl --disk-usage
+echo ""
+echo "════════════════════════════════════════════════════════════════════"
+echo "  FishCam — Clear System Journal"
+echo "════════════════════════════════════════════════════════════════════"
+echo ""
+
+echo "  Journal disk usage before:"
+journalctl --disk-usage | sed 's/^/    /'
 
 echo ""
-echo "Clearing journal..."
+echo "  Clearing journal..."
 sudo journalctl --rotate
 sudo journalctl --vacuum-time=1s
 
 echo ""
-echo "Journal disk usage after:"
-journalctl --disk-usage
+echo "  Journal disk usage after:"
+journalctl --disk-usage | sed 's/^/    /'
 
 echo ""
-echo "Done. Journal cleared."
+echo "  Done. Journal cleared."
+echo ""

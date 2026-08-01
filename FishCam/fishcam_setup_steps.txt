@@ -122,6 +122,10 @@
           sudo usermod -aG i2c fishcam
       Log out and back in (or reboot) for the group change to take effect.
 
+      Fix ownership of the WittyPi directory (installer runs as root, leaving
+      files owned by root which prevents configure_wittypi.py from writing logs):
+          sudo chown -R fishcam:fishcam /home/fishcam/Desktop/wittypi/
+
   B3. Configure WittyPi
       ────────────────────────────────────────────────────────────────────────
       Run the FishCam configuration script (no sudo needed):

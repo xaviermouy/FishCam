@@ -46,14 +46,16 @@ def main():
         'GPS'   : base / paths['gps_dir'],
     }
 
-    print('=' * 60)
-    print('FishCam Data Deletion Utility')
-    print('=' * 60)
     print()
-    print('Directories that will be cleared:')
+    print('═' * 68)
+    print('  FishCam — Delete Recorded Data')
+    print('═' * 68)
+    print()
+    print('  Directories that will be cleared:')
     for label, path in directories.items():
         exists = path.exists()
-        print(f'  [{label}] {path}', '(not found)' if not exists else '')
+        suffix = '  (not found)' if not exists else ''
+        print(f'    [{label:<5}] {path}{suffix}')
 
     print()
 
@@ -61,17 +63,17 @@ def main():
     total_files, total_bytes = count_files(all_dirs)
 
     if total_files == 0:
-        print('No files found — nothing to delete.')
+        print('  No files found — nothing to delete.')
         return
 
-    print(f'Found {total_files} file(s) totalling {fmt_size(total_bytes)}.')
+    print(f'  Found {total_files} file(s) totalling {fmt_size(total_bytes)}.')
     print()
-    print('WARNING: This action is irreversible.')
-    print('Type "DELETE ALL" to confirm: ', end='', flush=True)
+    print('  WARNING: This action is irreversible.')
+    print('  Type "DELETE ALL" to confirm: ', end='', flush=True)
 
     confirmation = input().strip()
     if confirmation != 'DELETE ALL':
-        print('Aborted — no files were deleted.')
+        print('  Aborted — no files were deleted.')
         return
 
     print()
@@ -106,9 +108,10 @@ def main():
                     pass  # not empty, leave it
 
     print()
-    print(f'Done — {deleted_files} file(s) deleted.', end='')
+    print(f'  Done — {deleted_files} file(s) deleted.', end='')
     if failed_files:
-        print(f' {failed_files} file(s) could not be deleted (see errors above).', end='')
+        print(f'  {failed_files} file(s) could not be deleted (see errors above).', end='')
+    print()
     print()
 
 

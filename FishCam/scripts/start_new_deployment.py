@@ -24,15 +24,16 @@ SCRIPT_DIR = Path(__file__).parent
 
 def banner(title):
     print()
-    print('=' * 68)
+    print('═' * 68)
     print(f'  {title}')
-    print('=' * 68)
+    print('═' * 68)
 
 
 def step(n, total, title):
     print()
-    print(f'  ── Step {n}/{total}: {title}')
-    print('  ' + '─' * 50)
+    print('─' * 68)
+    print(f'  Step {n}/{total}: {title}')
+    print('─' * 68)
 
 
 def ask(prompt, valid=('y', 'n'), default=None):

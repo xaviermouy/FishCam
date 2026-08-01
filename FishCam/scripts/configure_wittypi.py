@@ -479,9 +479,9 @@ def main():
     args = parser.parse_args()
 
     print()
-    print("=" * 78)
+    print("═" * 68)
     print("  FishCam WittyPi Configuration")
-    print("=" * 78)
+    print("═" * 68)
 
     # ── Load config ──────────────────────────────────────────────────────────
     try:
@@ -665,9 +665,9 @@ def main():
 
     # ── Final summary ────────────────────────────────────────────────────────
     print()
-    print("─" * 78)
+    print("─" * 68)
     print("  CONFIGURATION COMPLETE")
-    print("─" * 78)
+    print("─" * 68)
 
     if disable_schedule:
         print("  Mode           : Schedule DISABLED — Pi stays on continuously")
@@ -688,7 +688,7 @@ def main():
         print("  ⚠  One or more I2C parameter writes failed.")
         print("     Set them manually via the wittyPi.sh menu.")
 
-    print("─" * 78)
+    print("─" * 68)
     print()
 
 
