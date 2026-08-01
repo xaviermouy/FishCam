@@ -200,31 +200,44 @@ class PowerSavingController:
                 self._set_config_led(False)
                 self._last_config_led_flash = now
 
-    def run_command(self, command, check=False):
-        """Execute shell command with error handling"""
+    def run_command(self, command, check=False, timeout=30):
+        """Execute shell command with error handling.
+
+        timeout: seconds before the command is abandoned (default 30).
+        Prevents a hung nmcli from blocking the main loop indefinitely.
+        """
         try:
             result = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
-                check=check
+                check=check,
+                timeout=timeout,
             )
             if result.returncode != 0 and result.stderr:
                 logging.warning(f"Command '{command}' returned: {result.stderr.strip()}")
             return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            logging.error(f"Command timed out after {timeout}s: '{command}'")
+            return False
         except Exception as e:
             logging.error(f"Failed to run command '{command}': {e}")
             return False
 
-    def _run_and_get_output(self, command):
+    def _run_and_get_output(self, command, timeout=10):
         """Run a shell command and return its stdout, or None on failure."""
         try:
-            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            result = subprocess.run(
+                command, shell=True, capture_output=True, text=True, timeout=timeout
+            )
             if result.returncode == 0:
                 return result.stdout
             if result.stderr:
                 logging.warning(f"Command '{command}' returned: {result.stderr.strip()}")
+            return None
+        except subprocess.TimeoutExpired:
+            logging.error(f"Command timed out after {timeout}s: '{command}'")
             return None
         except Exception as e:
             logging.error(f"Failed to run command '{command}': {e}")
@@ -274,7 +287,7 @@ class PowerSavingController:
 
         # Step 2: driver reload — only if rmmod succeeds (module not locked)
         logging.warning("Soft reset failed — attempting brcmfmac driver reload")
-        rmmod_ok = self.run_command("sudo rmmod brcmfmac")
+        rmmod_ok = self.run_command("sudo rmmod brcmfmac", timeout=15)
         if not rmmod_ok:
             logging.error(
                 "Cannot unload brcmfmac (module locked — likely held by brcmfmac_wcc). "
@@ -283,8 +296,11 @@ class PowerSavingController:
             return False
 
         time.sleep(2)
-        self.run_command("sudo modprobe brcmfmac")
+        self.run_command("sudo modprobe brcmfmac", timeout=15)
         time.sleep(5)
+        # Re-enable the radio — the driver reload resets it to off
+        self.run_command("nmcli radio wifi on", timeout=10)
+        time.sleep(5)  # allow the interface to initialize before scanning
         self.connect_wifi()
         time.sleep(3)
         if self.check_wifi_health():
@@ -295,7 +311,7 @@ class PowerSavingController:
         return False
 
     def connect_wifi(self):
-        """Connect to configured WiFi network"""
+        """Connect to configured WiFi network."""
         if not self.wifi_auto_connect:
             return
 
@@ -308,10 +324,20 @@ class PowerSavingController:
         # Delete any existing NetworkManager profile for this SSID before connecting.
         # A stale or corrupt profile (e.g. missing key-mgmt) would cause every
         # subsequent connect attempt to fail silently — always start fresh.
-        self.run_command(f"nmcli connection delete \"{self.wifi_ssid}\"")
+        self.run_command(f"nmcli connection delete \"{self.wifi_ssid}\"", timeout=10)
 
+        # Force a fresh scan so nmcli can see the network.
+        # Without this, "No network with SSID found" is returned if the scan
+        # cache is empty (e.g. right after enabling the radio or reloading the driver).
+        self.run_command("nmcli device wifi rescan", timeout=10)
+        time.sleep(3)  # allow scan results to populate
+
+        # Single-quote the password to prevent the shell from expanding special
+        # characters such as $, !, etc. that are common in passwords.
+        safe_pw = self.wifi_password.replace("'", "'\\''")  # escape any literal single quotes
         result = self.run_command(
-            f"nmcli device wifi connect \"{self.wifi_ssid}\" password \"{self.wifi_password}\""
+            f"nmcli device wifi connect \"{self.wifi_ssid}\" password '{safe_pw}'",
+            timeout=45,  # nmcli connect can legitimately take 20-30 s
         )
 
         if result:
@@ -434,11 +460,9 @@ class PowerSavingController:
         # Enable WiFi (if it was disabled in power saving mode)
         if self.disable_wifi:
             logging.info("Enabling WiFi...")
-            # Use nmcli instead of rfkill to properly work with NetworkManager
-            self.run_command("nmcli radio wifi on")
-            # Wait for WiFi to initialize before attempting connection
-            time.sleep(3)
-            # Auto-connect to configured network
+            self.run_command("nmcli radio wifi on", timeout=10)
+            # Give the interface time to initialize before scanning/connecting
+            time.sleep(5)
             self.connect_wifi()
         else:
             logging.info("WiFi enable skipped (was not disabled)")
@@ -560,9 +584,14 @@ class PowerSavingController:
                     if self.current_mode != 'config':
                         logging.info("Switch ON - switching to config mode")
                         self.enter_config_mode()
-                    elif self.wifi_auto_connect and not self.check_wifi_health():
-                        # Already in config mode but WiFi dropped — attempt recovery
-                        if self._wifi_recovery_failures < self._WIFI_RECOVERY_MAX:
+                    elif self.wifi_auto_connect:
+                        if self.check_wifi_health():
+                            # WiFi is healthy — reset counter so future drops can recover
+                            if self._wifi_recovery_failures > 0:
+                                logging.info("WiFi healthy — resetting recovery counter")
+                                self._wifi_recovery_failures = 0
+                        elif self._wifi_recovery_failures < self._WIFI_RECOVERY_MAX:
+                            # WiFi dropped — attempt recovery
                             ok = self.recover_wifi()
                             if ok:
                                 self._wifi_recovery_failures = 0
