@@ -214,10 +214,32 @@ def captureVideo_loop(outDir, iterations=0, videoSettings=0, flagname=''):
     # Load default settings if nothing else provided
     if videoSettings == 0:
         videoSettings = initVideoSettings()
+
+    MAX_CONSECUTIVE_FAILURES = 5  # give up after this many back-to-back errors
+    RETRY_DELAY_S = 15            # wait between retries (lets kernel clean up state)
+
     # Loop
     if iterations == 0:  # Indefinite loop if no iterations provided
+        consecutive_failures = 0
         while not _shutdown_event.is_set():
-            captureVideo(outDir, videoSettings, flagname=flagname)
+            try:
+                captureVideo(outDir, videoSettings, flagname=flagname)
+                consecutive_failures = 0  # reset on successful clip
+            except Exception as e:
+                if _shutdown_event.is_set():
+                    break
+                consecutive_failures += 1
+                logging.error(
+                    f"Camera error (failure {consecutive_failures}/{MAX_CONSECUTIVE_FAILURES}): {e}"
+                )
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    logging.error(
+                        "Too many consecutive camera failures — stopping video acquisition."
+                    )
+                    raise
+                logging.info(f"Retrying camera in {RETRY_DELAY_S}s...")
+                _shutdown_event.wait(timeout=RETRY_DELAY_S)  # interruptible sleep
+
     elif iterations > 0:  # Finite loop if iterations provided
         for it in range(iterations):
             if _shutdown_event.is_set():

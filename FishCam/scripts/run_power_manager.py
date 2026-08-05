@@ -555,47 +555,68 @@ class PowerSavingController:
                 self.enter_power_saving_mode()
             self.update_config_led()
 
+            _MAX_LOOP_FAILURES = 5
+            _LOOP_RETRY_DELAY  = 15
+            consecutive_failures = 0
+
             while not self.shutdown_requested:
-                switch_on = self.read_latch_switch()
+                try:
+                    switch_on = self.read_latch_switch()
 
-                if switch_on:
-                    if self.current_mode != 'config':
-                        logging.info("Switch ON - switching to config mode")
-                        self.enter_config_mode()
-                    elif self.wifi_auto_connect:
-                        if self.check_wifi_health():
-                            # WiFi is healthy — reset counter so future drops can recover
-                            if self._wifi_recovery_failures > 0:
-                                logging.info("WiFi healthy — resetting recovery counter")
-                                self._wifi_recovery_failures = 0
-                        elif self._wifi_recovery_failures < self._WIFI_RECOVERY_MAX:
-                            # WiFi dropped — attempt recovery
-                            ok = self.recover_wifi()
-                            if ok:
-                                self._wifi_recovery_failures = 0
-                            else:
-                                self._wifi_recovery_failures += 1
-                                if self._wifi_recovery_failures >= self._WIFI_RECOVERY_MAX:
-                                    logging.error(
-                                        f"WiFi recovery failed {self._WIFI_RECOVERY_MAX} times "
-                                        f"consecutively — giving up. WiFi will remain down until "
-                                        f"next mode switch or reboot."
-                                    )
-                        # else: already given up — don't retry, don't log again
-                else:
-                    if self.current_mode != 'power_saving':
-                        logging.info("Switch OFF - switching to power saving mode")
-                        self.enter_power_saving_mode()
+                    if switch_on:
+                        if self.current_mode != 'config':
+                            logging.info("Switch ON - switching to config mode")
+                            self.enter_config_mode()
+                        elif self.wifi_auto_connect:
+                            if self.check_wifi_health():
+                                # WiFi is healthy — reset counter so future drops can recover
+                                if self._wifi_recovery_failures > 0:
+                                    logging.info("WiFi healthy — resetting recovery counter")
+                                    self._wifi_recovery_failures = 0
+                            elif self._wifi_recovery_failures < self._WIFI_RECOVERY_MAX:
+                                # WiFi dropped — attempt recovery
+                                ok = self.recover_wifi()
+                                if ok:
+                                    self._wifi_recovery_failures = 0
+                                else:
+                                    self._wifi_recovery_failures += 1
+                                    if self._wifi_recovery_failures >= self._WIFI_RECOVERY_MAX:
+                                        logging.error(
+                                            f"WiFi recovery failed {self._WIFI_RECOVERY_MAX} times "
+                                            f"consecutively — giving up. WiFi will remain down until "
+                                            f"next mode switch or reboot."
+                                        )
+                            # else: already given up — don't retry, don't log again
+                    else:
+                        if self.current_mode != 'power_saving':
+                            logging.info("Switch OFF - switching to power saving mode")
+                            self.enter_power_saving_mode()
 
-                self.update_config_led()
+                    self.update_config_led()
 
-                # Periodic voltage logging
-                now_mono = time.monotonic()
-                if now_mono - self._last_voltage_log >= self.voltage_log_interval_s:
-                    self._log_voltage()
-                    self._last_voltage_log = now_mono
+                    # Periodic voltage logging
+                    now_mono = time.monotonic()
+                    if now_mono - self._last_voltage_log >= self.voltage_log_interval_s:
+                        self._log_voltage()
+                        self._last_voltage_log = now_mono
 
-                time.sleep(self.check_interval)
+                    time.sleep(self.check_interval)
+                    consecutive_failures = 0  # reset on clean iteration
+
+                except Exception as e:
+                    if self.shutdown_requested:
+                        break
+                    consecutive_failures += 1
+                    logging.error(
+                        f"Main loop error (failure {consecutive_failures}/{_MAX_LOOP_FAILURES}): {e}"
+                    )
+                    if consecutive_failures >= _MAX_LOOP_FAILURES:
+                        logging.error(
+                            "Too many consecutive main loop failures — stopping power manager."
+                        )
+                        raise
+                    logging.info(f"Retrying main loop in {_LOOP_RETRY_DELAY}s...")
+                    time.sleep(_LOOP_RETRY_DELAY)
 
         except KeyboardInterrupt:
             logging.info("Shutting down power saving controller...")

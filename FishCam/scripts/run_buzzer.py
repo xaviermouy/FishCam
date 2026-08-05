@@ -27,7 +27,8 @@ import logging
 import sys
 import re
 import signal
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import config
@@ -59,18 +60,48 @@ def _parse_trigger_times(time_strings):
     return sorted(times)
 
 
-def _next_trigger(trigger_times):
-    """Return the next trigger datetime (today or tomorrow if all times have passed)."""
-    now = datetime.now()
-    today = date.today()
+def _next_trigger(trigger_times, local_tz, grace_sec, fired_today):
+    """Return (next_utc, (sched_h, sched_mn)) for the next trigger to fire.
+
+    Trigger times are specified in local_tz but compared against UTC (the Pi clock).
+    Priority order:
+      1. Most recently missed trigger within grace_sec that has not been fired yet.
+         Iterates in reverse (latest first) so the one with smallest lag is returned.
+      2. Next future trigger not already fired today.
+      3. First trigger tomorrow (fired_today resets at midnight local time).
+    """
+    now_utc     = datetime.now()                       # naive UTC (Pi is always UTC)
+    today_local = datetime.now(tz=local_tz).date()    # today in local time
+
+    # 1. Most recently missed trigger within grace window (reverse = latest first)
+    if grace_sec > 0:
+        for h, mn in reversed(trigger_times):
+            if (h, mn) in fired_today:
+                continue
+            local_dt = datetime(today_local.year, today_local.month, today_local.day,
+                                h, mn, tzinfo=local_tz)
+            utc_dt   = local_dt.astimezone(timezone.utc).replace(tzinfo=None)
+            seconds_past = (now_utc - utc_dt).total_seconds()
+            if 0 < seconds_past <= grace_sec:
+                return utc_dt, (h, mn)
+
+    # 2. Next future trigger not already fired today
     for h, mn in trigger_times:
-        candidate = datetime(today.year, today.month, today.day, h, mn)
-        if candidate > now:
-            return candidate
-    # All times have passed today — schedule for first time tomorrow
-    tomorrow = today + timedelta(days=1)
+        if (h, mn) in fired_today:
+            continue
+        local_dt = datetime(today_local.year, today_local.month, today_local.day,
+                            h, mn, tzinfo=local_tz)
+        utc_dt   = local_dt.astimezone(timezone.utc).replace(tzinfo=None)
+        if utc_dt > now_utc:
+            return utc_dt, (h, mn)
+
+    # 3. All today's triggers done — schedule first trigger tomorrow
+    tomorrow_local = today_local + timedelta(days=1)
     h, mn = trigger_times[0]
-    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, h, mn)
+    local_dt = datetime(tomorrow_local.year, tomorrow_local.month, tomorrow_local.day,
+                        h, mn, tzinfo=local_tz)
+    utc_dt   = local_dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return utc_dt, (h, mn)
 
 
 def _play_sequence(chip, pin, beep_dur, beep_gap, beep_count):
@@ -114,12 +145,22 @@ def main():
         beep_gap   = buzzer_cfg['beep_gap_sec']
         num_seq    = buzzer_cfg['number_sequences']
         gap_btw    = buzzer_cfg['gap_between_sequences_sec']
+        grace_sec  = buzzer_cfg['missed_trigger_grace_sec']
+        tz_name    = buzzer_cfg['timezone']
     except KeyError as e:
         logging.error(f"Missing required buzzer configuration key: {e}. Check fishcam_config.yaml.")
         sys.exit(1)
 
+    try:
+        local_tz = ZoneInfo(tz_name)
+    except Exception as e:
+        logging.error(f"Invalid timezone '{tz_name}': {e}. Check 'timezone' in fishcam_config.yaml.")
+        sys.exit(1)
+
     time_strs = [f'{h:02d}:{mn:02d}' for h, mn in trigger_times]
-    logging.info(f"Trigger times          : {time_strs}")
+    logging.info(f"Timezone               : {tz_name} (trigger times are local; logs are UTC)")
+    logging.info(f"Trigger times (local)  : {time_strs}")
+    logging.info(f"Missed trigger grace   : {grace_sec}s")
     logging.info(f"Beeps per sequence     : {beep_count}")
     logging.info(f"Sequences per trigger  : {num_seq}")
     logging.info(f"Gap between sequences  : {gap_btw}s")
@@ -136,6 +177,9 @@ def main():
     signal.signal(signal.SIGTERM, _on_signal)
     signal.signal(signal.SIGINT,  _on_signal)
 
+    _MAX_LOOP_FAILURES = 5
+    _LOOP_RETRY_DELAY  = 15
+
     # Open GPIO — released in finally so buzzer is always left OFF
     chip = lgpio.gpiochip_open(0)
     try:
@@ -143,34 +187,91 @@ def main():
         lgpio.gpio_write(chip, pin, 0)
         logging.info(f"GPIO initialized: buzzer on pin {pin}")
 
+        consecutive_failures = 0
+        fired_today: set     = set()
+        last_date_local      = datetime.now(tz=local_tz).date()
+
         while not _shutdown['requested']:
-            next_dt  = _next_trigger(trigger_times)
-            wait_sec = (next_dt - datetime.now()).total_seconds()
-            logging.info(f"Next trigger: {next_dt.strftime('%Y-%m-%d %H:%M')} "
-                         f"(in {wait_sec / 60:.1f} min)")
+            try:
+                # Reset fired triggers when the local date rolls over
+                current_date_local = datetime.now(tz=local_tz).date()
+                if current_date_local != last_date_local:
+                    logging.info(
+                        f"New local date ({current_date_local}) — resetting fired trigger list"
+                    )
+                    fired_today.clear()
+                    last_date_local = current_date_local
 
-            # Sleep in 5 s chunks so SIGTERM is caught promptly
-            while not _shutdown['requested']:
-                remaining = (next_dt - datetime.now()).total_seconds()
-                if remaining <= 0:
-                    break
-                time.sleep(min(remaining, 5.0))
+                next_utc, (sched_h, sched_mn) = _next_trigger(
+                    trigger_times, local_tz, grace_sec, fired_today
+                )
+                sched_local_str = f"{sched_h:02d}:{sched_mn:02d}"
+                wait_sec = (next_utc - datetime.now()).total_seconds()
 
-            if _shutdown['requested']:
-                break
+                if wait_sec < 0:
+                    logging.info(
+                        f"Firing missed trigger: scheduled {sched_local_str} local, "
+                        f"{-wait_sec:.0f}s ago — firing now"
+                    )
+                else:
+                    logging.info(
+                        f"Next trigger: {sched_local_str} local = "
+                        f"{next_utc.strftime('%Y-%m-%d %H:%M')} UTC  "
+                        f"(in {wait_sec / 60:.1f} min)"
+                    )
 
-            logging.info(f"Trigger at {datetime.now().strftime('%H:%M:%S')} — "
-                         f"playing {num_seq} sequence(s) of {beep_count} beep(s)")
+                # Sleep in 5 s chunks so SIGTERM is caught promptly
+                while not _shutdown['requested']:
+                    remaining = (next_utc - datetime.now()).total_seconds()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(remaining, 5.0))
 
-            for seq in range(num_seq):
                 if _shutdown['requested']:
                     break
-                t0 = datetime.now()
-                logging.info(f"Sequence {seq + 1}/{num_seq} at "
-                             f"{t0.strftime('%H:%M:%S.%f')[:-3]}")
-                _play_sequence(chip, pin, beep_dur, beep_gap, beep_count)
-                if seq < num_seq - 1 and not _shutdown['requested']:
-                    time.sleep(gap_btw)
+
+                actual_utc_str = datetime.now().strftime('%H:%M:%S')
+                seconds_late   = (datetime.now() - next_utc).total_seconds()
+                if seconds_late > 2:
+                    logging.info(
+                        f"Trigger at {actual_utc_str} UTC — scheduled {sched_local_str} local "
+                        f"({seconds_late:.0f}s late) — "
+                        f"playing {num_seq} sequence(s) of {beep_count} beep(s)"
+                    )
+                else:
+                    logging.info(
+                        f"Trigger at {actual_utc_str} UTC — scheduled {sched_local_str} local — "
+                        f"playing {num_seq} sequence(s) of {beep_count} beep(s)"
+                    )
+
+                for seq in range(num_seq):
+                    if _shutdown['requested']:
+                        break
+                    t0 = datetime.now()
+                    logging.info(
+                        f"Sequence {seq + 1}/{num_seq} at {t0.strftime('%H:%M:%S.%f')[:-3]} UTC"
+                    )
+                    _play_sequence(chip, pin, beep_dur, beep_gap, beep_count)
+                    if seq < num_seq - 1 and not _shutdown['requested']:
+                        time.sleep(gap_btw)
+
+                fired_today.add((sched_h, sched_mn))
+                consecutive_failures = 0  # reset after successful trigger cycle
+
+            except Exception as e:
+                if _shutdown['requested']:
+                    break
+                consecutive_failures += 1
+                logging.error(
+                    f"Buzzer loop error (failure {consecutive_failures}/{_MAX_LOOP_FAILURES}): {e}"
+                )
+                if consecutive_failures >= _MAX_LOOP_FAILURES:
+                    logging.error(
+                        "Too many consecutive buzzer failures — stopping buzzer controller."
+                    )
+                    raise
+                logging.info(f"Retrying buzzer in {_LOOP_RETRY_DELAY}s...")
+                time.sleep(_LOOP_RETRY_DELAY)
 
     finally:
         lgpio.gpio_write(chip, pin, 0)   # ensure buzzer is OFF on exit

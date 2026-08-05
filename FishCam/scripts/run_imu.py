@@ -365,36 +365,57 @@ def main():
     data_dir = Path(__file__).parent / paths['imu_dir']
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp  = datetime.now().strftime('%Y%m%dT%H%M%S.%fZ')
-    csv_path   = data_dir / f'{timestamp}_{fishcam_id}_imu.csv'
+    _MAX_RESTARTS    = 5
+    _RESTART_DELAY_S = 15
+    consecutive_restarts = 0
 
-    # Log startup configuration
-    logging.info("IMU acquisition ENABLED")
-    logging.info(f"I2C address  : 0x{imu_cfg['i2c_address']:02X}")
-    logging.info(f"Sample rate  : {imu_cfg['sample_rate_hz']} Hz")
-    logging.info(f"Output file  : {csv_path}")
-    logging.info("Enabled reports:")
-    for report in ('accelerometer', 'gyroscope', 'magnetometer',
-                   'rotation_vector', 'linear_acceleration', 'gravity'):
-        logging.info(f"  {report}: {imu_cfg[report]}")
+    while True:
+        # New timestamp and CSV file on each start/restart so sessions don't overlap
+        timestamp = datetime.now().strftime('%Y%m%dT%H%M%S.%fZ')
+        csv_path  = data_dir / f'{timestamp}_{fishcam_id}_imu.csv'
 
-    acquisition = IMUAcquisition(
-        sample_rate_hz         = imu_cfg['sample_rate_hz'],
-        i2c_address            = imu_cfg['i2c_address'],
-        enable_accelerometer   = imu_cfg['accelerometer'],
-        enable_gyroscope       = imu_cfg['gyroscope'],
-        enable_magnetometer    = imu_cfg['magnetometer'],
-        enable_rotation_vector = imu_cfg['rotation_vector'],
-        enable_linear_acceleration = imu_cfg['linear_acceleration'],
-        enable_gravity         = imu_cfg['gravity'],
-        output_path            = csv_path,
-    )
+        logging.info("IMU acquisition ENABLED")
+        logging.info(f"I2C address  : 0x{imu_cfg['i2c_address']:02X}")
+        logging.info(f"Sample rate  : {imu_cfg['sample_rate_hz']} Hz")
+        logging.info(f"Output file  : {csv_path}")
+        logging.info("Enabled reports:")
+        for report in ('accelerometer', 'gyroscope', 'magnetometer',
+                       'rotation_vector', 'linear_acceleration', 'gravity'):
+            logging.info(f"  {report}: {imu_cfg[report]}")
 
-    signal.signal(signal.SIGTERM, acquisition.signal_handler)
-    signal.signal(signal.SIGINT,  acquisition.signal_handler)
-    logging.info("Signal handlers registered")
+        acquisition = IMUAcquisition(
+            sample_rate_hz             = imu_cfg['sample_rate_hz'],
+            i2c_address                = imu_cfg['i2c_address'],
+            enable_accelerometer       = imu_cfg['accelerometer'],
+            enable_gyroscope           = imu_cfg['gyroscope'],
+            enable_magnetometer        = imu_cfg['magnetometer'],
+            enable_rotation_vector     = imu_cfg['rotation_vector'],
+            enable_linear_acceleration = imu_cfg['linear_acceleration'],
+            enable_gravity             = imu_cfg['gravity'],
+            output_path                = csv_path,
+        )
 
-    acquisition.run()
+        signal.signal(signal.SIGTERM, acquisition.signal_handler)
+        signal.signal(signal.SIGINT,  acquisition.signal_handler)
+        logging.info("Signal handlers registered")
+
+        try:
+            acquisition.run()
+        except Exception as e:
+            if acquisition.shutdown_requested:
+                break
+            consecutive_restarts += 1
+            logging.error(
+                f"IMU acquisition error (restart {consecutive_restarts}/{_MAX_RESTARTS}): {e}"
+            )
+            if consecutive_restarts >= _MAX_RESTARTS:
+                logging.error("Too many consecutive IMU restarts — stopping IMU acquisition.")
+                sys.exit(1)
+            logging.info(f"Restarting IMU acquisition in {_RESTART_DELAY_S}s...")
+            time.sleep(_RESTART_DELAY_S)
+            continue
+
+        break  # clean shutdown (shutdown_requested)
 
 
 if __name__ == '__main__':

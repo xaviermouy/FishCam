@@ -96,6 +96,17 @@ class FishCamConfig:
         """
         return self.config.get('fishcam', {})
 
+    def get_timezone(self):
+        """Get the deployment local timezone (IANA name).
+
+        Reads from the top-level 'timezone' key. Falls back to
+        wittypi.timezone for backward compatibility with older configs.
+        """
+        return (
+            self.config.get('timezone')
+            or self.config.get('wittypi', {}).get('timezone', 'UTC')
+        )
+
     def get_wittypi_settings(self):
         """
         Get WittyPi settings.
@@ -117,7 +128,7 @@ class FishCamConfig:
             'auto_sync_rtc_from_internet':   wittypi.get('auto_sync_rtc_from_internet', True),
             'auto_sync_rtc_from_gps':        wittypi.get('auto_sync_rtc_from_gps', False),
             'rtc_sync_min_interval_min':     wittypi.get('rtc_sync_min_interval_min', 15),
-            'timezone':             wittypi.get('timezone', 'UTC'),
+            'timezone':             self.get_timezone(),
             'deployment': {
                 'start': deployment.get('start', ''),
                 'end':   deployment.get('end',   ''),
@@ -149,7 +160,19 @@ class FishCamConfig:
         Returns:
             dict: Full buzzer configuration section.
         """
-        return self.config.get('buzzer', {})
+        buzzer = self.config.get('buzzer', {})
+        return {
+            'enabled':                   buzzer.get('enabled', False),
+            'pin':                       buzzer.get('pin', 26),
+            'trigger_times':             buzzer.get('trigger_times', []),
+            'beep_count':                buzzer.get('beep_count', 1),
+            'beep_duration_sec':         buzzer.get('beep_duration_sec', 0.1),
+            'beep_gap_sec':              buzzer.get('beep_gap_sec', 0.1),
+            'number_sequences':          buzzer.get('number_sequences', 1),
+            'gap_between_sequences_sec': buzzer.get('gap_between_sequences_sec', 5),
+            'missed_trigger_grace_sec':  buzzer.get('missed_trigger_grace_sec', 60),
+            'timezone':                  self.get_timezone(),
+        }
 
     def get_paths(self):
         """
@@ -268,6 +291,10 @@ def get_config(config_file='fishcam_config.yaml'):
 def get_video_settings():
     """Get video settings from configuration"""
     return get_config().get_video_settings()
+
+def get_timezone():
+    """Get the deployment local timezone (IANA name)"""
+    return get_config().get_timezone()
 
 def get_buzzer_settings():
     """Get buzzer settings from configuration"""

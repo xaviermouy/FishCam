@@ -30,6 +30,13 @@ camera:
   vflip: false  # Vertical flip: true or false
   hflip: false  # Horizontal flip: true or false
 
+# Deployment Timezone
+# Pi must always run UTC. This timezone is used to interpret all local times in this file
+# (WittyPi deployment window, daily schedule anchor, buzzer trigger times).
+# Must be a valid IANA timezone name: https://timeapi.io/documentation/iana-timezones
+# Run configure_wittypi.py for validation — it will suggest the closest name if unrecognized.
+timezone: "America/Vancouver"
+
 # Network Settings
 network:
   wifi_auto_connect: true   # Automatically connect to WiFi on boot / when entering config mode
@@ -54,6 +61,7 @@ buzzer:
   beep_gap_sec: 0.1           # Silence between beeps within a sequence
   number_sequences: 5         # How many sequences to play per trigger
   gap_between_sequences_sec: 5  # Gap between repeated sequences in seconds
+  missed_trigger_grace_sec: 60  # Fire a missed trigger if it was scheduled within this many seconds ago (0 = disabled)
 
 # Power Saving Mode Settings
 power_saving:
@@ -115,13 +123,7 @@ wittypi:
   auto_sync_rtc_from_gps: false       # sync RTC from GPS fix (requires GPS module)
   rtc_sync_min_interval_min: 15       # minimum minutes between RTC syncs from any source
 
-  # Deployment timezone — Pi must always run UTC; times below are in this local timezone.
-  # Must be a valid IANA timezone name (e.g. "America/Vancouver", "Pacific/Auckland").
-  # https://timeapi.io/documentation/iana-timezones
-  # Run configure_wittypi.py for validation — it will suggest the closest name if unrecognized.
-  timezone: "America/Vancouver"
-
-  # Deployment window (local time in the timezone above)
+  # Deployment window (local time — see top-level 'timezone' key)
   deployment:
     start: "2026-08-01 06:00:00"
     end:   "2026-09-30 23:59:59"

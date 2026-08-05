@@ -317,7 +317,7 @@ def visualize_schedule(wittypi_cfg, tz, anchor_utc, entries):
     print("─" * 78)
     print("  24-HOUR POWER SCHEDULE PREVIEW")
     print("─" * 78)
-    print(f"  Timezone : {wittypi_cfg['timezone']}  ({off_str} at deployment start)")
+    print(f"  Timezone : {tz.key}  ({off_str} at deployment start)")
     print(f"  Anchor   : {anchor_str} local  =  "
           f"{anchor_utc.strftime('%H:%M')} UTC")
     print()
@@ -495,7 +495,7 @@ def main():
     delay_s      = wittypi_cfg['power_cut_delay_sec']
     low_v        = wittypi_cfg['low_voltage_cutoff_v']
     rec_v        = wittypi_cfg['recovery_voltage_v']
-    tz_name      = wittypi_cfg['timezone']
+    tz_name      = config.get_timezone()
     windows      = wittypi_cfg['daily_schedule']['windows']
     anchor_str   = wittypi_cfg['daily_schedule']['anchor_time']
     deploy_start = wittypi_cfg['deployment']['start']
