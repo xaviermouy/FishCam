@@ -67,6 +67,14 @@ python3 ./run_network.py
 # Skips instantly if WiFi is down (power saving mode) or interval not elapsed
 python3 ./sync_rtc.py
 
+# Fix wittyPi.log ownership before run_power_manager.py starts.
+# run_power_manager.py runs as root; if a previous boot left wittyPi.log
+# owned by root, configure_wittypi.py (run as fishcam) will fail with
+# "Permission denied". Reset ownership to the current user at each boot.
+if [ -n "$WITTYPI_DIR" ] && [ -d "$WITTYPI_DIR" ]; then
+    sudo chown "$USER:$USER" "$WITTYPI_DIR/wittyPi.log" 2>/dev/null || true
+fi
+
 # Start power saving mode controller in background
 if pgrep -f "run_power_manager.py" > /dev/null; then
     echo "Power saving controller already running, skipping..."
