@@ -15,7 +15,7 @@ Run once before each deployment:
 
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -66,7 +66,7 @@ def main():
     print('  This script prepares the FishCam for a new deployment.')
     print('  Each step will ask for confirmation before making changes.')
 
-    TOTAL_STEPS = 7
+    TOTAL_STEPS = 8
 
     # ── Step 1: Confirm fishcam identity ─────────────────────────────────────
     step(1, TOTAL_STEPS, 'Confirm FishCam identity')
@@ -80,7 +80,8 @@ def main():
 
     # ── Step 2: Confirm deployment timezone ──────────────────────────────────
     step(2, TOTAL_STEPS, 'Confirm deployment timezone')
-    tz_name = config.get_timezone()
+    tz_name  = config.get_timezone()
+    local_tz = None
     try:
         local_tz   = ZoneInfo(tz_name)
         local_now  = datetime.now(tz=local_tz)
@@ -102,8 +103,49 @@ def main():
         print('  Edit deployment_timezone in fishcam_config.yaml and re-run.')
         sys.exit(0)
 
-    # ── Step 3: Configure WittyPi ─────────────────────────────────────────────
-    step(3, TOTAL_STEPS, 'Configure WittyPi')
+    # ── Step 3: Review buzzer schedule ───────────────────────────────────────
+    step(3, TOTAL_STEPS, 'Review buzzer schedule')
+    buzzer_cfg = config.get_buzzer_settings()
+    if not buzzer_cfg.get('enabled', False):
+        print('  Buzzer status : DISABLED')
+        print()
+        answer = ask('Is this intentional?', valid=('y', 'n'))
+        if answer != 'y':
+            print()
+            print('  Set buzzer.enabled: true in fishcam_config.yaml and re-run.')
+            sys.exit(0)
+    else:
+        trigger_times_raw = buzzer_cfg.get('trigger_times', [])
+        print(f'  Buzzer status : ENABLED  (GPIO pin {buzzer_cfg["pin"]})')
+        print()
+        print(f'  {"Local (" + tz_name + ")":<35}  UTC')
+        print(f'  {"─" * 35}  {"─" * 5}')
+        today = datetime.now(tz=local_tz).date() if local_tz else datetime.utcnow().date()
+        for t in trigger_times_raw:
+            if local_tz:
+                try:
+                    h, mn   = map(int, str(t).split(':'))
+                    local_dt = datetime(today.year, today.month, today.day,
+                                        h, mn, tzinfo=local_tz)
+                    utc_str  = local_dt.astimezone(timezone.utc).strftime('%H:%M')
+                except Exception:
+                    utc_str = '?'
+            else:
+                utc_str = '(timezone unknown)'
+            print(f'  {str(t):<35}  {utc_str}')
+        print()
+        print(f'  Beep count per sequence : {buzzer_cfg["beep_count"]}')
+        print(f'  Sequences per trigger   : {buzzer_cfg["number_sequences"]}')
+        print(f'  Missed trigger grace    : {buzzer_cfg["missed_trigger_grace_sec"]}s')
+        print()
+        answer = ask('Does the buzzer schedule look correct?', valid=('y', 'n'))
+        if answer != 'y':
+            print()
+            print('  Edit buzzer settings in fishcam_config.yaml and re-run.')
+            sys.exit(0)
+
+    # ── Step 4: Configure WittyPi ─────────────────────────────────────────────
+    step(4, TOTAL_STEPS, 'Configure WittyPi')
     print('  Running configure_wittypi.py ...')
     print()
     rc = run_step(['python3', 'configure_wittypi.py'])
@@ -121,8 +163,8 @@ def main():
     print('  This is expected — it means WittyPi has no schedule to act on and will')
     print('  leave the Pi running continuously. It is NOT an error.')
 
-    # ── Step 4: Delete recorded data ──────────────────────────────────────────
-    step(4, TOTAL_STEPS, 'Delete all recorded data')
+    # ── Step 5: Delete recorded data ──────────────────────────────────────────
+    step(5, TOTAL_STEPS, 'Delete all recorded data')
     print('  Running delete_data.py ...')
     print()
     rc = run_step(['python3', 'delete_data.py'])
@@ -134,8 +176,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 5: Clear WittyPi logs ────────────────────────────────────────────
-    step(5, TOTAL_STEPS, 'Clear WittyPi logs')
+    # ── Step 6: Clear WittyPi logs ────────────────────────────────────────────
+    step(6, TOTAL_STEPS, 'Clear WittyPi logs')
     print('  Running clear_wittypi_logs.sh ...')
     print()
     rc = run_step(['bash', 'clear_wittypi_logs.sh'])
@@ -147,8 +189,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 6: Clear system journal ─────────────────────────────────────────
-    step(6, TOTAL_STEPS, 'Clear system journal')
+    # ── Step 7: Clear system journal ─────────────────────────────────────────
+    step(7, TOTAL_STEPS, 'Clear system journal')
     print('  Running clear_system_logs.sh ...')
     print()
     rc = run_step(['bash', 'clear_system_logs.sh'])
@@ -160,8 +202,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 7: Reboot ───────────────────────────────────────────────────────
-    step(7, TOTAL_STEPS, 'Reboot')
+    # ── Step 8: Reboot ───────────────────────────────────────────────────────
+    step(8, TOTAL_STEPS, 'Reboot')
     print('  A reboot is recommended to:')
     print('    - Test the full startup sequence (cron, fishcamStartup.sh)')
     print('    - Apply the WittyPi schedule from cold')

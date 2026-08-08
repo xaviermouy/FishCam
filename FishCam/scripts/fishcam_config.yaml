@@ -50,7 +50,7 @@ buzzer:
   enabled: true  # Enable/disable buzzer functionality
   pin: 26  # GPIO pin number for buzzer (BCM numbering)
 
-  # Times of day to trigger beep sequences (24-hour HH:MM format)
+  # Times of day to trigger beep sequences (24-hour HH:MM format - in local/deployment time zone)
   trigger_times:
     - "10:00"
     - "12:00"
