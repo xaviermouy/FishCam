@@ -8,6 +8,8 @@ monitor_system.py / run_power_manager.py (voltage reading) can all
 import from one place without circular dependencies.
 """
 
+import os
+import pwd
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,11 +26,27 @@ def run_wittypi_func(install_dir, bash_cmd):
 
     Returns:
         (ok: bool, output: str)
+
+    When called from a root process (e.g. run_power_manager.py runs under
+    sudo), the bash command is re-executed as the owner of install_dir via
+    'sudo -u <owner>'.  This prevents utilities.sh from creating root-owned
+    wittyPi.log entries that would block later runs by the fishcam user.
     """
-    r = subprocess.run(
-        ['bash', '-c', f'source "{install_dir}/utilities.sh" && {bash_cmd}'],
-        capture_output=True, text=True, cwd=str(install_dir)
-    )
+    full_cmd = f'source "{install_dir}/utilities.sh" && {bash_cmd}'
+    cmd = ['bash', '-c', full_cmd]
+
+    if os.getuid() == 0:
+        # Running as root — drop to the install_dir owner so log writes
+        # stay owned by that user (normally 'fishcam').
+        try:
+            dir_uid = os.stat(install_dir).st_uid
+            if dir_uid != 0:
+                dir_owner = pwd.getpwuid(dir_uid).pw_name
+                cmd = ['sudo', '-u', dir_owner, 'bash', '-c', full_cmd]
+        except (OSError, KeyError):
+            pass  # can't determine owner — fall back to running as root
+
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(install_dir))
     return r.returncode == 0, (r.stdout + r.stderr).strip()
 
 
