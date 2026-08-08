@@ -99,11 +99,13 @@ class FishCamConfig:
     def get_timezone(self):
         """Get the deployment local timezone (IANA name).
 
-        Reads from the top-level 'timezone' key. Falls back to
-        wittypi.timezone for backward compatibility with older configs.
+        Reads from the top-level 'deployment_timezone' key. Falls back to
+        the old 'timezone' key and then wittypi.timezone for backward
+        compatibility with older configs.
         """
         return (
-            self.config.get('timezone')
+            self.config.get('deployment_timezone')
+            or self.config.get('timezone')
             or self.config.get('wittypi', {}).get('timezone', 'UTC')
         )
 
@@ -128,7 +130,7 @@ class FishCamConfig:
             'auto_sync_rtc_from_internet':   wittypi.get('auto_sync_rtc_from_internet', True),
             'auto_sync_rtc_from_gps':        wittypi.get('auto_sync_rtc_from_gps', False),
             'rtc_sync_min_interval_min':     wittypi.get('rtc_sync_min_interval_min', 15),
-            'timezone':             self.get_timezone(),
+            'deployment_timezone':  self.get_timezone(),
             'deployment': {
                 'start': deployment.get('start', ''),
                 'end':   deployment.get('end',   ''),
@@ -171,7 +173,7 @@ class FishCamConfig:
             'number_sequences':          buzzer.get('number_sequences', 1),
             'gap_between_sequences_sec': buzzer.get('gap_between_sequences_sec', 5),
             'missed_trigger_grace_sec':  buzzer.get('missed_trigger_grace_sec', 60),
-            'timezone':                  self.get_timezone(),
+            'deployment_timezone':        self.get_timezone(),
         }
 
     def get_paths(self):

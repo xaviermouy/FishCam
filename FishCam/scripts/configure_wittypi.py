@@ -572,7 +572,7 @@ def main():
                 print("      Did you mean one of these?")
                 for s in suggestions:
                     print(f"          {s}")
-            print("      Edit 'timezone' in fishcam_config.yaml and re-run.")
+            print("      Edit 'deployment_timezone' in fishcam_config.yaml and re-run.")
             sys.exit(1)
 
         deploy_start_local = datetime.strptime(deploy_start, '%Y-%m-%d %H:%M:%S').replace(tzinfo=tz)

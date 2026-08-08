@@ -146,7 +146,7 @@ def main():
         num_seq    = buzzer_cfg['number_sequences']
         gap_btw    = buzzer_cfg['gap_between_sequences_sec']
         grace_sec  = buzzer_cfg['missed_trigger_grace_sec']
-        tz_name    = buzzer_cfg['timezone']
+        tz_name    = buzzer_cfg['deployment_timezone']
     except KeyError as e:
         logging.error(f"Missing required buzzer configuration key: {e}. Check fishcam_config.yaml.")
         sys.exit(1)
@@ -154,7 +154,7 @@ def main():
     try:
         local_tz = ZoneInfo(tz_name)
     except Exception as e:
-        logging.error(f"Invalid timezone '{tz_name}': {e}. Check 'timezone' in fishcam_config.yaml.")
+        logging.error(f"Invalid timezone '{tz_name}': {e}. Check 'deployment_timezone' in fishcam_config.yaml.")
         sys.exit(1)
 
     time_strs = [f'{h:02d}:{mn:02d}' for h, mn in trigger_times]
