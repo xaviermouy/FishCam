@@ -15,7 +15,9 @@ Run once before each deployment:
 
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import config
 
@@ -64,20 +66,44 @@ def main():
     print('  This script prepares the FishCam for a new deployment.')
     print('  Each step will ask for confirmation before making changes.')
 
-    TOTAL_STEPS = 6
+    TOTAL_STEPS = 7
 
     # ── Step 1: Confirm fishcam identity ─────────────────────────────────────
     step(1, TOTAL_STEPS, 'Confirm FishCam identity')
     fishcam_id = config.get_fishcam_id()
     print(f'  FishCam ID (hostname) : {fishcam_id}')
     print()
-    answer = ask(f'Is this the correct unit?', valid=('y', 'n'))
+    answer = ask('Is this the correct unit?', valid=('y', 'n'))
     if answer != 'y':
         print('  Please run this script on the correct unit. Aborting.')
         sys.exit(0)
 
-    # ── Step 2: Configure WittyPi ─────────────────────────────────────────────
-    step(2, TOTAL_STEPS, 'Configure WittyPi')
+    # ── Step 2: Confirm deployment timezone ──────────────────────────────────
+    step(2, TOTAL_STEPS, 'Confirm deployment timezone')
+    tz_name = config.get_timezone()
+    try:
+        local_tz   = ZoneInfo(tz_name)
+        local_now  = datetime.now(tz=local_tz)
+        local_time = local_now.strftime('%Y-%m-%d %H:%M:%S')
+        offset_str = local_now.strftime('%Z (UTC%z)')
+        print(f'  Deployment timezone : {tz_name}')
+        print(f'  Current local time  : {local_time}  {offset_str}')
+    except ZoneInfoNotFoundError:
+        print(f'  WARNING: Timezone "{tz_name}" is not recognized.')
+        print(f'  Edit deployment_timezone in fishcam_config.yaml and re-run.')
+        answer = ask('Continue anyway?', valid=('y', 'n'), default='n')
+        if answer != 'y':
+            print('  Aborting.')
+            sys.exit(1)
+    print()
+    answer = ask('Is the timezone and local time correct?', valid=('y', 'n'))
+    if answer != 'y':
+        print()
+        print('  Edit deployment_timezone in fishcam_config.yaml and re-run.')
+        sys.exit(0)
+
+    # ── Step 3: Configure WittyPi ─────────────────────────────────────────────
+    step(3, TOTAL_STEPS, 'Configure WittyPi')
     print('  Running configure_wittypi.py ...')
     print()
     rc = run_step(['python3', 'configure_wittypi.py'])
@@ -95,8 +121,8 @@ def main():
     print('  This is expected — it means WittyPi has no schedule to act on and will')
     print('  leave the Pi running continuously. It is NOT an error.')
 
-    # ── Step 3: Delete recorded data ──────────────────────────────────────────
-    step(3, TOTAL_STEPS, 'Delete all recorded data')
+    # ── Step 4: Delete recorded data ──────────────────────────────────────────
+    step(4, TOTAL_STEPS, 'Delete all recorded data')
     print('  Running delete_data.py ...')
     print()
     rc = run_step(['python3', 'delete_data.py'])
@@ -108,8 +134,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 4: Clear WittyPi logs ────────────────────────────────────────────
-    step(4, TOTAL_STEPS, 'Clear WittyPi logs')
+    # ── Step 5: Clear WittyPi logs ────────────────────────────────────────────
+    step(5, TOTAL_STEPS, 'Clear WittyPi logs')
     print('  Running clear_wittypi_logs.sh ...')
     print()
     rc = run_step(['bash', 'clear_wittypi_logs.sh'])
@@ -121,8 +147,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 5: Clear system journal ─────────────────────────────────────────
-    step(5, TOTAL_STEPS, 'Clear system journal')
+    # ── Step 6: Clear system journal ─────────────────────────────────────────
+    step(6, TOTAL_STEPS, 'Clear system journal')
     print('  Running clear_system_logs.sh ...')
     print()
     rc = run_step(['bash', 'clear_system_logs.sh'])
@@ -134,8 +160,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 6: Reboot ───────────────────────────────────────────────────────
-    step(6, TOTAL_STEPS, 'Reboot')
+    # ── Step 7: Reboot ───────────────────────────────────────────────────────
+    step(7, TOTAL_STEPS, 'Reboot')
     print('  A reboot is recommended to:')
     print('    - Test the full startup sequence (cron, fishcamStartup.sh)')
     print('    - Apply the WittyPi schedule from cold')

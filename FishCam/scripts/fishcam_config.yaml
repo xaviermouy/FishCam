@@ -6,7 +6,7 @@
 # (WittyPi deployment window, daily schedule anchor, buzzer trigger times).
 # Must be a valid IANA timezone name: https://timeapi.io/documentation/iana-timezones
 # Run configure_wittypi.py for validation — it will suggest the closest name if unrecognized.
-deployment_timezone: "America/Vancouver"
+deployment_timezone: "America/New_York"
 
 # Video Capture Settings
 video:
