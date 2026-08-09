@@ -45,6 +45,8 @@ from wittypi_utils import read_wittypi_voltage
 class PowerSavingController:
     CONFIG_LED_FLASH_INTERVAL = 10.0  # seconds between flashes in power saving mode
     CONFIG_LED_FLASH_DURATION = 0.1   # seconds the LED stays on per flash
+    TRANSITION_FLASH_ON       = 0.15  # seconds LED on per flash during mode transition
+    TRANSITION_FLASH_OFF      = 0.10  # seconds LED off per flash during mode transition
 
     def __init__(self, reed_pin, led_pin, check_interval,
                  disable_wifi=True, disable_bluetooth=True, disable_hdmi=True,
@@ -178,6 +180,26 @@ class PowerSavingController:
                 self._set_config_led(False)
                 self._last_config_led_flash = now
 
+    def _flash_for(self, duration_s):
+        """Flash the LED rapidly for duration_s seconds.
+
+        Used at the start of mode transitions to give immediate visual
+        feedback that the switch state change was detected, and during
+        any blocking waits within the transition sequence.
+        """
+        end = time.monotonic() + duration_s
+        while not self.shutdown_requested:
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                break
+            self._set_config_led(True)
+            time.sleep(min(self.TRANSITION_FLASH_ON, remaining))
+            self._set_config_led(False)
+            remaining = end - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(self.TRANSITION_FLASH_OFF, remaining))
+        self._set_config_led(False)
+
     def run_command(self, command, check=False, timeout=30):
         """Execute shell command with error handling.
 
@@ -308,7 +330,7 @@ class PowerSavingController:
         # Without this, "No network with SSID found" is returned if the scan
         # cache is empty (e.g. right after enabling the radio or reloading the driver).
         self.run_command("nmcli device wifi rescan", timeout=10)
-        time.sleep(3)  # allow scan results to populate
+        self._flash_for(3)  # flash during scan wait instead of sleeping dark
 
         # Single-quote the password to prevent the shell from expanding special
         # characters such as $, !, etc. that are common in passwords.
@@ -330,7 +352,10 @@ class PowerSavingController:
 
         logging.info("Entering power saving mode...")
 
-        self._last_config_led_flash = 0.0  # trigger immediate flash on next update_config_led() call
+        # Fast-flash immediately so the user knows the switch was detected,
+        # before any slow WiFi/service operations begin.
+        self._flash_for(2)
+        self._last_config_led_flash = 0.0  # trigger immediate slow flash once transition is done
 
         # Disable WiFi (if enabled in config)
         if self.disable_wifi:
@@ -343,7 +368,7 @@ class PowerSavingController:
                 if self.shutdown_requested:
                     break
                 self.run_command("nmcli radio wifi off")
-                time.sleep(retry_interval)
+                self._flash_for(retry_interval)  # flash during wait instead of sleeping
 
                 # Check if WiFi is actually off
                 output = self._run_and_get_output("nmcli radio wifi")
@@ -435,12 +460,16 @@ class PowerSavingController:
 
         logging.info("Entering configuration mode...")
 
+        # Fast-flash immediately so the user knows the switch was detected,
+        # before any slow WiFi/service operations begin.
+        self._flash_for(2)
+
         # Enable WiFi (if it was disabled in power saving mode)
         if self.disable_wifi:
             logging.info("Enabling WiFi...")
             self.run_command("nmcli radio wifi on", timeout=10)
-            # Give the interface time to initialize before scanning/connecting
-            time.sleep(5)
+            # Flash during the interface init wait instead of sleeping dark
+            self._flash_for(5)
             self.connect_wifi()
         else:
             logging.info("WiFi enable skipped (was not disabled)")
