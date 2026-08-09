@@ -177,8 +177,10 @@ def read_wittypi_voltage(install_dir):
 def check_i2c(address):
     """Return (ok: bool|None, detail: str). Probe is read-only and non-destructive."""
     try:
+        env = os.environ.copy()
+        env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:' + env.get('PATH', '')
         r = subprocess.run(['i2cdetect', '-y', '1'],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5, env=env)
         addr_hex = f'{address:02x}'
         if addr_hex in r.stdout.lower():
             return True, f'0x{address:02X} on bus 1'

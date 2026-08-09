@@ -46,7 +46,12 @@ def run_wittypi_func(install_dir, bash_cmd):
         except (OSError, KeyError):
             pass  # can't determine owner — fall back to running as root
 
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(install_dir))
+    # Ensure /usr/sbin is in PATH so i2cget/i2cset are found when this is
+    # called from a process with a minimal environment (e.g. Flask/API server).
+    env = os.environ.copy()
+    env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:' + env.get('PATH', '')
+
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(install_dir), env=env)
     return r.returncode == 0, (r.stdout + r.stderr).strip()
 
 
