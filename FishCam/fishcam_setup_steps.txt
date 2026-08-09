@@ -237,6 +237,15 @@
       automatically on boot via fishcamStartup.sh.
       Access a single unit directly: http://fishcam01.local:5000/
 
+  Verify and fix a fishcam setup  (packages, cron, repo, permissions)
+  ──────────────────────────────────────────────────────────────────
+      cd /home/fishcam/Desktop/FishCam/FishCam/scripts
+      bash verify_fishcam.sh
+      # Auto-fixes: missing pip packages, missing cron job, outdated repo,
+      #             WittyPi/log ownership, i2c group membership.
+      # Reports:   hostname format, I2C config, SSH, filesystem expansion,
+      #             journal persistence.
+
   Power saving status report
   ──────────────────────────────────────────────────────────────────
       bash /home/fishcam/Desktop/FishCam/FishCam/scripts/utils/check_power_status.sh
