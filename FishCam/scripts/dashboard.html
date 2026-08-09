@@ -742,24 +742,67 @@ function manualRefresh() {
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
-(async function init() {
-  const prefix = await getLocalIPPrefix();
-  if (prefix) {
-    document.getElementById('subnet-status').textContent = `(detected)`;
-    await scanSubnet(prefix);
-  } else {
-    // WebRTC detection failed — show manual input and prompt user
-    document.getElementById('subnet-status').textContent = 'Could not detect automatically';
-    document.getElementById('grid').innerHTML = `
-      <div class="empty-state">
-        <h2>Enter your subnet</h2>
-        <p>Type the first three parts of your network address<br>
-           (e.g. <strong>192.168.43</strong>) then tap Scan.</p>
-      </div>`;
-    document.getElementById('subnet-input').focus();
-    return;  // Don't start countdown — wait for user to scan manually
+
+// Common hotspot subnets to try when WebRTC detection fails.
+// Android uses 192.168.43.x, iPhone uses 172.20.10.x.
+// A subnet is accepted if at least one IP responds on API_PORT.
+const FALLBACK_PREFIXES = ['192.168.43', '172.20.10'];
+
+async function quickProbe(prefix) {
+  // Probe a few IPs on the subnet to see if any fishcam responds.
+  // Uses IPs 1–20 as a fast check — avoids a full 254-IP scan just to detect.
+  const probes = [];
+  for (let i = 1; i <= 20; i++) {
+    probes.push(probeIP(`${prefix}.${i}`));
   }
-  startCountdown();
+  const results = await Promise.allSettled(probes);
+  return results.some(r => r.status === 'fulfilled' && r.value.online);
+}
+
+(async function init() {
+  // 1. Try WebRTC auto-detection
+  const detected = await getLocalIPPrefix();
+  if (detected) {
+    document.getElementById('subnet-status').textContent = '(auto-detected)';
+    await scanSubnet(detected);
+    startCountdown();
+    return;
+  }
+
+  // 2. WebRTC failed — try known hotspot subnets
+  document.getElementById('subnet-status').textContent = 'Trying common subnets…';
+  document.getElementById('grid').innerHTML = `
+    <div class="empty-state">
+      <div class="spinner"></div>
+      <p style="margin-top:12px">WebRTC detection unavailable — trying common hotspot subnets…</p>
+    </div>`;
+
+  for (const prefix of FALLBACK_PREFIXES) {
+    document.getElementById('subnet-status').textContent = `Trying ${prefix}.x…`;
+    const found = await quickProbe(prefix);
+    if (found) {
+      document.getElementById('subnet-status').textContent = `(matched ${prefix}.x)`;
+      await scanSubnet(prefix);
+      startCountdown();
+      return;
+    }
+  }
+
+  // 3. Nothing found automatically — prompt for manual input
+  document.getElementById('subnet-status').textContent = 'Not detected';
+  document.getElementById('grid').innerHTML = `
+    <div class="empty-state">
+      <h2>Enter your subnet</h2>
+      <p>Type the first three parts of your network address<br>
+         then tap <strong>Scan</strong>.</p>
+      <p style="margin-top:10px;font-size:12px;color:var(--muted)">
+        Android hotspot: <strong>192.168.43</strong><br>
+        iPhone hotspot: <strong>172.20.10</strong><br>
+        Laptop (check with <code>ipconfig</code> / <code>ifconfig</code>)
+      </p>
+    </div>`;
+  document.getElementById('subnet-input').focus();
+  // No startCountdown() — wait for user to scan manually
 })();
 </script>
 </body>
