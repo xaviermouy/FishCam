@@ -37,7 +37,7 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
-    margin-bottom: 20px;
+    margin-bottom: 10px;
   }
   .page-header h1 {
     font-size: 22px;
@@ -52,6 +52,35 @@
   #countdown {
     color: var(--muted);
     font-size: 13px;
+  }
+
+  /* ── Subnet bar ── */
+  .subnet-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .subnet-bar label {
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .subnet-bar input {
+    background: #2a2a2a;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 13px;
+    width: 140px;
+    font-family: monospace;
+  }
+  .subnet-bar input:focus { outline: none; border-color: var(--blue); }
+  #subnet-status {
+    color: var(--muted);
+    font-size: 12px;
   }
 
   /* ── Buttons ── */
@@ -188,13 +217,20 @@
     margin: 10px 0;
   }
 
-  /* ── No fishcams ── */
+  /* ── Empty / discovering state ── */
   .empty-state {
     text-align: center;
     padding: 60px 20px;
     color: var(--muted);
   }
   .empty-state h2 { margin-bottom: 8px; }
+
+  .discovering-bar {
+    text-align: center;
+    padding: 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
 
   /* ── Spinner ── */
   .spinner {
@@ -214,15 +250,22 @@
 <div class="page-header">
   <h1>FishCam Dashboard</h1>
   <div class="header-controls">
-    <span id="countdown">Discovering…</span>
+    <span id="countdown">Detecting network…</span>
     <button onclick="manualRefresh()">Refresh</button>
   </div>
+</div>
+
+<div class="subnet-bar">
+  <label for="subnet-input">Subnet:</label>
+  <input id="subnet-input" type="text" placeholder="e.g. 192.168.43" />
+  <button onclick="manualScan()">Scan</button>
+  <span id="subnet-status"></span>
 </div>
 
 <div class="grid" id="grid">
   <div class="empty-state">
     <div class="spinner"></div>
-    <p style="margin-top:12px">Discovering FishCam units…</p>
+    <p style="margin-top:12px">Detecting network…</p>
   </div>
 </div>
 
@@ -230,91 +273,148 @@
 'use strict';
 
 // ── Configuration ────────────────────────────────────────────────────────────
-const FISHCAM_COUNT    = 20;
 const API_PORT         = 5000;
-const REFRESH_INTERVAL = 15;   // seconds between full refreshes
-const DISCOVERY_TIMEOUT_MS = 3000;
+const REFRESH_INTERVAL = 15;    // seconds between auto-refreshes
+const SCAN_TIMEOUT_MS  = 1500;  // per-IP timeout — LAN devices respond fast
 
 // ── State ────────────────────────────────────────────────────────────────────
-let discovered   = {};   // { hostname: { status: 'online'|'offline', data: {...} } }
-let countdownVal = REFRESH_INTERVAL;
+let discovered    = {};   // { ip: { online, data, ip } }
+let currentPrefix = null;
+let countdownVal  = REFRESH_INTERVAL;
 let countdownTimer;
-let refreshTimer;
+let scanning      = false;
 
-// ── Discovery ─────────────────────────────────────────────────────────────────
-async function probeFishcam(hostname) {
-  const url = `http://${hostname}:${API_PORT}/status`;
-  const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+// ── Network detection ─────────────────────────────────────────────────────────
+function getLocalIPPrefix() {
+  return new Promise((resolve) => {
+    try {
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      pc.createDataChannel('');
+      pc.createOffer().then(o => pc.setLocalDescription(o));
+      const seen = new Set();
+      pc.onicecandidate = (e) => {
+        if (!e || !e.candidate) return;
+        const m = /(\d+\.\d+\.\d+)\.\d+/.exec(e.candidate.candidate);
+        if (m && !m[1].startsWith('127.')) {
+          if (!seen.has(m[1])) {
+            seen.add(m[1]);
+            resolve(m[1]);
+            pc.close();
+          }
+        }
+      };
+      setTimeout(() => resolve(null), 2500);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+// ── IP probe ──────────────────────────────────────────────────────────────────
+async function probeIP(ip) {
+  const url  = `http://${ip}:${API_PORT}/status`;
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), SCAN_TIMEOUT_MS);
   try {
-    const resp = await fetch(url, { signal: controller.signal });
+    const resp = await fetch(url, { signal: ctrl.signal });
     clearTimeout(tid);
     if (!resp.ok) return { online: false };
     const data = await resp.json();
-    return { online: true, data };
+    return { online: true, data, ip };
   } catch {
     clearTimeout(tid);
     return { online: false };
   }
 }
 
-async function discover() {
-  const hostnames = [];
-  for (let i = 1; i <= FISHCAM_COUNT; i++) {
-    hostnames.push(`fishcam${String(i).padStart(2, '0')}.local`);
+// ── Subnet scan ───────────────────────────────────────────────────────────────
+async function scanSubnet(prefix) {
+  scanning      = true;
+  currentPrefix = prefix;
+  discovered    = {};
+
+  document.getElementById('subnet-input').value = prefix;
+  document.getElementById('subnet-status').textContent = '';
+
+  let probesDone = 0;
+  const total    = 254;
+  renderDiscovering(0, total);
+
+  const probes = [];
+  for (let i = 1; i <= 254; i++) {
+    const ip = `${prefix}.${i}`;
+    const p  = probeIP(ip).then(result => {
+      probesDone++;
+      if (result.online) {
+        discovered[ip] = { online: true, data: result.data, ip };
+        renderDiscovering(probesDone, total);
+      } else if (probesDone % 25 === 0 || probesDone === total) {
+        renderDiscovering(probesDone, total);
+      }
+    });
+    probes.push(p);
   }
 
-  const results = await Promise.allSettled(hostnames.map(h => probeFishcam(h)));
-
-  discovered = {};
-  results.forEach((r, i) => {
-    const hostname = hostnames[i];
-    if (r.status === 'fulfilled' && r.value.online) {
-      discovered[hostname] = { online: true, data: r.value.data };
-    }
-  });
-
+  await Promise.allSettled(probes);
+  scanning = false;
   render();
 }
 
 // ── Per-unit refresh ──────────────────────────────────────────────────────────
 async function refreshAll() {
   if (Object.keys(discovered).length === 0) {
-    await discover();
+    if (currentPrefix) {
+      await scanSubnet(currentPrefix);
+    }
     return;
   }
-  const hostnames = Object.keys(discovered);
-  await Promise.allSettled(hostnames.map(async h => {
-    const result = await probeFishcam(h);
+  const ips = Object.keys(discovered);
+  await Promise.allSettled(ips.map(async ip => {
+    const result = await probeIP(ip);
     if (result.online) {
-      discovered[h] = { online: true, data: result.data };
+      discovered[ip] = { online: true, data: result.data, ip };
     } else {
-      discovered[h] = { online: false, data: discovered[h]?.data };
+      discovered[ip] = { online: false, data: discovered[ip]?.data, ip };
     }
   }));
   render();
 }
 
+// ── Manual subnet input ───────────────────────────────────────────────────────
+function manualScan() {
+  const input  = document.getElementById('subnet-input');
+  const prefix = input.value.trim().replace(/\.$/, ''); // tolerate trailing dot
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(prefix)) {
+    clearInterval(countdownTimer);
+    scanSubnet(prefix).then(() => startCountdown());
+  } else {
+    input.style.borderColor = 'var(--red)';
+    document.getElementById('subnet-status').textContent = 'Format: 192.168.x';
+    setTimeout(() => {
+      input.style.borderColor = '';
+      document.getElementById('subnet-status').textContent = '';
+    }, 2000);
+  }
+}
+
 // ── Sync RTC ──────────────────────────────────────────────────────────────────
-async function syncRtc(hostname, btnEl, resultEl) {
-  btnEl.disabled = true;
+async function syncRtc(ip, btnEl, resultEl) {
+  btnEl.disabled    = true;
   btnEl.textContent = 'Syncing…';
   resultEl.textContent = '';
-  resultEl.className = 'sync-result';
+  resultEl.className   = 'sync-result';
 
   try {
-    const resp = await fetch(`http://${hostname}:${API_PORT}/sync_rtc`, { method: 'POST' });
+    const resp = await fetch(`http://${ip}:${API_PORT}/sync_rtc`, { method: 'POST' });
     const d    = await resp.json();
     const ok   = d.ntp_ok && d.rtc_ok;
-    resultEl.textContent = ok
-      ? `NTP: ${d.ntp_msg} | RTC: ${d.rtc_msg}`
-      : `NTP: ${d.ntp_msg} | RTC: ${d.rtc_msg}`;
-    resultEl.className = 'sync-result ' + (ok ? 'ok' : 'err');
+    resultEl.textContent = `NTP: ${d.ntp_msg} | RTC: ${d.rtc_msg}`;
+    resultEl.className   = 'sync-result ' + (ok ? 'ok' : 'err');
   } catch (e) {
     resultEl.textContent = `Error: ${e.message}`;
-    resultEl.className = 'sync-result err';
+    resultEl.className   = 'sync-result err';
   } finally {
-    btnEl.disabled  = false;
+    btnEl.disabled    = false;
     btnEl.textContent = 'Sync Time';
   }
 }
@@ -353,15 +453,12 @@ function tempClass(t) {
   return 'green';
 }
 
-function renderCard(hostname, entry) {
+function renderCard(ip, entry) {
   const online = entry.online;
   const d      = entry.data;
-  const cardId = 'card-' + hostname.replace(/\./g, '-');
+  const cardId = 'card-' + ip.replace(/\./g, '-');
 
-  if (!online && !d) {
-    // Never responded — skip entirely
-    return '';
-  }
+  if (!online && !d) return '';
 
   const offlineBadge = !online
     ? `<span class="offline-badge">Offline</span>`
@@ -371,14 +468,14 @@ function renderCard(hostname, entry) {
     ? `<span class="last-updated">${d.time}</span>`
     : `<span class="last-updated">-</span>`;
 
-  const fishcamLabel = d?.fishcam_id || hostname;
+  const fishcamLabel = d?.fishcam_id || ip;
 
   let body = '';
 
   if (d) {
     // ── PROCESSES ──
     const procRows = (d.processes || []).map(p => {
-      const color = p.running ? 'green' : 'red';
+      const color  = p.running ? 'green' : 'red';
       const detail = p.running
         ? `PID ${p.pid} &nbsp; up ${p.uptime}`
         : 'STOPPED';
@@ -389,8 +486,8 @@ function renderCard(hostname, entry) {
     }).join('');
 
     // ── ACQUISITION ──
-    const acq      = d.acquisition || {};
-    const procMap  = {};
+    const acq     = d.acquisition || {};
+    const procMap = {};
     (d.processes || []).forEach(p => { procMap[p.label] = p.running; });
 
     function acqRow(key, label, procLabel) {
@@ -443,8 +540,8 @@ function renderCard(hostname, entry) {
     }
 
     // ── HARDWARE ──
-    const cam = Array.isArray(d.camera) ? d.camera : [null, '?'];
-    const imu = Array.isArray(d.imu_bus) ? d.imu_bus : [null, '?'];
+    const cam    = Array.isArray(d.camera)  ? d.camera  : [null, '?'];
+    const imu    = Array.isArray(d.imu_bus) ? d.imu_bus : [null, '?'];
     const camOk  = cam[0];
     const camStr = cam[1] || '?';
     const imuOk  = imu[0];
@@ -455,26 +552,28 @@ function renderCard(hostname, entry) {
     const camSym   = camOk === true ? '✓' : camOk === false ? '✗' : '?';
     const imuSym   = imuOk === true ? '✓' : imuOk === false ? '✗' : '?';
 
-    const v     = d.voltage;
-    const lowV  = d.voltage_low_v || 0;
-    const recV  = d.voltage_rec_v || 0;
+    const v      = d.voltage;
+    const lowV   = d.voltage_low_v || 0;
+    const recV   = d.voltage_rec_v || 0;
     const vClass = voltageClass(v, lowV, recV);
-    const vStr  = v != null ? `${v.toFixed(1)} V` : 'n/a';
-    const vThresh = lowV > 0 ? `(cutoff ${lowV}V / recovery ${recV}V)` : '(protection disabled)';
+    const vStr   = v != null ? `${v.toFixed(1)} V` : 'n/a';
+    const vThresh = lowV > 0
+      ? `(cutoff ${lowV}V / recovery ${recV}V)`
+      : '(protection disabled)';
 
     // ── SYSTEM ──
-    const temp     = d.cpu_temp;
-    const tClass   = tempClass(temp);
-    const tStr     = temp != null ? `${temp.toFixed(1)}°C` : 'n/a';
-    const st       = d.storage || {};
-    const pct      = st.pct;
-    const dColor   = diskColor(pct);
-    const dStr     = (st.used_gb != null && st.total_gb != null)
+    const temp   = d.cpu_temp;
+    const tClass = tempClass(temp);
+    const tStr   = temp != null ? `${temp.toFixed(1)}°C` : 'n/a';
+    const st     = d.storage || {};
+    const pct    = st.pct;
+    const dColor = diskColor(pct);
+    const dStr   = (st.used_gb != null && st.total_gb != null)
       ? `${st.used_gb.toFixed(1)} / ${st.total_gb.toFixed(0)} GB (${pct != null ? pct.toFixed(0) : '?'}%)`
       : 'unavailable';
     const fillPct  = pct != null ? Math.min(100, pct) : 0;
     const vidCount = st.video_count != null ? `${st.video_count} video files` : '';
-    const imuCount = st.imu_count  != null ? ` / ${st.imu_count} IMU files`  : '';
+    const imuCount = st.imu_count   != null ? ` / ${st.imu_count} IMU files`  : '';
 
     // ── LOG ERRORS ──
     const errorLogs = (d.logs || []).filter(l => l.err_1h > 0);
@@ -556,7 +655,7 @@ function renderCard(hostname, entry) {
       </section>
       <hr class="divider">
       <section class="section">
-        <button class="primary" onclick="handleSync('${hostname}', this)">Sync Time</button>
+        <button class="primary" onclick="handleSync('${ip}', this)">Sync Time</button>
         <div class="sync-result" id="sync-result-${cardId}"></div>
       </section>
     `;
@@ -575,6 +674,22 @@ function renderCard(hostname, entry) {
     </div>`;
 }
 
+function renderDiscovering(done, total) {
+  const grid      = document.getElementById('grid');
+  const foundKeys = Object.keys(discovered);
+  const cards     = foundKeys.map(ip => renderCard(ip, discovered[ip])).join('');
+
+  const progress = (done != null && total != null)
+    ? `Scanning ${done} / ${total} addresses…`
+    : 'Scanning…';
+  const foundNote = foundKeys.length > 0
+    ? `<span style="color:var(--green)">${foundKeys.length} unit${foundKeys.length > 1 ? 's' : ''} found</span> &nbsp;`
+    : '';
+
+  const bar = `<div class="discovering-bar">${foundNote}<span class="spinner"></span> ${progress}</div>`;
+  grid.innerHTML = cards + bar;
+}
+
 function render() {
   const grid = document.getElementById('grid');
   const keys = Object.keys(discovered);
@@ -584,24 +699,24 @@ function render() {
       <div class="empty-state">
         <h2>No FishCam units found</h2>
         <p>Make sure units are powered on, connected to WiFi, and the API is running on port ${API_PORT}.</p>
+        <p style="margin-top:8px;font-size:12px">Subnet scanned: ${currentPrefix || '—'}.x</p>
       </div>`;
     return;
   }
 
-  grid.innerHTML = keys.map(h => renderCard(h, discovered[h])).join('');
+  grid.innerHTML = keys.map(ip => renderCard(ip, discovered[ip])).join('');
 }
 
 // ── Sync button handler ───────────────────────────────────────────────────────
-function handleSync(hostname, btnEl) {
-  const cardId   = 'card-' + hostname.replace(/\./g, '-');
+function handleSync(ip, btnEl) {
+  const cardId   = 'card-' + ip.replace(/\./g, '-');
   const resultEl = document.getElementById(`sync-result-${cardId}`);
-  syncRtc(hostname, btnEl, resultEl);
+  syncRtc(ip, btnEl, resultEl);
 }
 
 // ── Countdown + auto-refresh ──────────────────────────────────────────────────
 function startCountdown() {
   clearInterval(countdownTimer);
-  clearTimeout(refreshTimer);
   countdownVal = REFRESH_INTERVAL;
   updateCountdown();
 
@@ -628,7 +743,22 @@ function manualRefresh() {
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 (async function init() {
-  await discover();
+  const prefix = await getLocalIPPrefix();
+  if (prefix) {
+    document.getElementById('subnet-status').textContent = `(detected)`;
+    await scanSubnet(prefix);
+  } else {
+    // WebRTC detection failed — show manual input and prompt user
+    document.getElementById('subnet-status').textContent = 'Could not detect automatically';
+    document.getElementById('grid').innerHTML = `
+      <div class="empty-state">
+        <h2>Enter your subnet</h2>
+        <p>Type the first three parts of your network address<br>
+           (e.g. <strong>192.168.43</strong>) then tap Scan.</p>
+      </div>`;
+    document.getElementById('subnet-input').focus();
+    return;  // Don't start countdown — wait for user to scan manually
+  }
   startCountdown();
 })();
 </script>

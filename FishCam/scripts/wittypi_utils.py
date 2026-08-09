@@ -171,10 +171,16 @@ def read_wittypi_voltage(install_dir):
         float: voltage in volts, or None if the read fails (WittyPi not
                connected, utilities.sh missing, I2C error, etc.)
     """
+    import re
     try:
-        ok, out = run_wittypi_func(install_dir, 'get_input_voltage')
-        if ok and out.strip():
-            return float(out.strip())
+        _, out = run_wittypi_func(install_dir, 'get_input_voltage')
+        # Don't rely on exit code — a root-owned wittyPi.log causes non-zero
+        # exit even when the I2C read itself succeeded.  Extract the first
+        # decimal number from the output regardless (handles "5.12", "Vin:
+        # 5.12 V", "Input voltage: 5.12V", etc.).
+        match = re.search(r'\d+\.\d+', out)
+        if match:
+            return float(match.group())
     except Exception:
         pass
     return None

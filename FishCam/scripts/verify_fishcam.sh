@@ -74,7 +74,9 @@ if echo "$hostname_val" | grep -qE '^fishcam[0-9]+$'; then
     pass "Hostname: $hostname_val"
 else
     warn "Hostname '$hostname_val' does not match 'fishcamXX' pattern"
-    info "Change via: sudo raspi-config > System > Hostname"
+    info "Fix: sudo raspi-config"
+    info "     > System Options > Hostname"
+    info "     Set to fishcam01, fishcam02, etc. then reboot."
 fi
 printf "\n"
 
@@ -132,7 +134,11 @@ else
         remote_hash="$(git -C "$REPO_DIR" rev-parse origin/main 2>/dev/null || echo '')"
 
         if [ -z "$remote_hash" ]; then
-            warn "Could not resolve origin/main — check remote configuration"
+            warn "Could not resolve origin/main — remote tracking branch missing"
+            info "Fix: cd $REPO_DIR"
+            info "     git remote set-url origin https://github.com/xaviermouy/FishCam.git"
+            info "     git fetch origin"
+            info "     git checkout -B main origin/main"
             info "Current commit: $(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
         elif [ "$local_hash" = "$remote_hash" ]; then
             pass "Repository up to date ($(git -C "$REPO_DIR" rev-parse --short HEAD))"
@@ -158,7 +164,11 @@ printf "${BOLD}  WITTYPI${RESET}\n"
 printf "  ──────────────────────────────────────────────────────────────\n"
 
 if [ ! -d "$WITTYPI_DIR" ]; then
-    fail "WittyPi not found at $WITTYPI_DIR — install from uugear.com/repo/WittyPi4/install.sh"
+    fail "WittyPi not found at $WITTYPI_DIR"
+    info "Fix: cd /home/fishcam/Desktop"
+    info "     wget http://www.uugear.com/repo/WittyPi4/install.sh"
+    info "     sudo sh install.sh"
+    info "     sudo chown -R fishcam:fishcam $WITTYPI_DIR"
 else
     pass "WittyPi directory exists"
 
@@ -209,8 +219,12 @@ printf "  ───────────────────────�
 if [ -d "$JOURNAL_DIR" ] && ls "$JOURNAL_DIR"/*/system.journal &>/dev/null; then
     pass "Persistent journal enabled ($JOURNAL_DIR)"
 else
-    warn "Journal does not appear to be persistent"
-    info "Enable via: sudo raspi-config > Advanced Options > Logging > Persistent"
+    warn "Journal does not appear to be persistent (boot logs lost on reboot)"
+    info "Fix: sudo raspi-config"
+    info "     > Advanced Options > Logging > Persistent"
+    info "     Reboot when prompted, then verify with: ls /var/log/journal/"
+    info "     NOTE: use raspi-config only — the manual mkdir method does not"
+    info "     work on Pi Zero W (no systemd-journald-flush.service)."
 fi
 printf "\n"
 
@@ -222,21 +236,31 @@ printf "  ───────────────────────�
 if grep -qE '^dtparam=i2c_arm=on' "$CONFIG_TXT" 2>/dev/null; then
     pass "I2C enabled in $CONFIG_TXT"
 else
-    warn "I2C may not be enabled — check: sudo raspi-config > Interfaces > I2C"
+    warn "I2C not enabled (IMU and WittyPi will not work)"
+    info "Fix: sudo raspi-config"
+    info "     > Interface Options > I2C > Yes"
+    info "     Reboot when prompted, then verify with: sudo i2cdetect -y 1"
 fi
 
 if grep -qE 'i2c_arm_baudrate=100000' "$CONFIG_TXT" 2>/dev/null; then
     pass "I2C baud rate set to 100 kHz"
 else
-    warn "I2C baud rate not set to 100 kHz (IMU stability)"
-    info "In $CONFIG_TXT, change:  dtparam=i2c_arm=on"
-    info "                    to:  dtparam=i2c_arm=on,i2c_arm_baudrate=100000"
+    warn "I2C baud rate not set to 100 kHz (may cause IMU communication errors)"
+    info "Fix: sudo nano $CONFIG_TXT"
+    info "     Find:    dtparam=i2c_arm=on"
+    info "     Replace: dtparam=i2c_arm=on,i2c_arm_baudrate=100000"
+    info "     Save (Ctrl+O, Enter, Ctrl+X), then reboot."
+    info "     Verify:  grep baudrate $CONFIG_TXT"
+    info "     (should show 000186a0 = 100000 in hex)"
 fi
 
 if systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
     pass "SSH is active"
 else
-    warn "SSH does not appear to be running — check: sudo raspi-config > Interfaces > SSH"
+    warn "SSH is not running (you will lose remote access after reboot)"
+    info "Fix: sudo raspi-config"
+    info "     > Interface Options > SSH > Yes"
+    info "     No reboot needed — SSH starts immediately."
 fi
 
 ROOT_SIZE_KB="$(df / --output=size | tail -1 | tr -d ' ')"
@@ -244,8 +268,10 @@ ROOT_SIZE_GB=$(( ROOT_SIZE_KB / 1024 / 1024 ))
 if [ "$ROOT_SIZE_GB" -ge 8 ]; then
     pass "Filesystem appears expanded (${ROOT_SIZE_GB} GB visible)"
 else
-    warn "Filesystem may not be fully expanded (only ${ROOT_SIZE_GB} GB visible)"
-    info "Expand via: sudo raspi-config > Advanced Options > Expand Filesystem"
+    warn "Filesystem not fully expanded — only ${ROOT_SIZE_GB} GB visible (wasted SD space)"
+    info "Fix: sudo raspi-config"
+    info "     > Advanced Options > Expand Filesystem"
+    info "     Reboot when prompted, then verify with: df -h /"
 fi
 
 printf "\n"
