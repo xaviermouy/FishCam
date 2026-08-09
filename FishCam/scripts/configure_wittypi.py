@@ -75,14 +75,6 @@ def check_utc_timezone():
     )
 
 
-def check_ntp_sync():
-    r = _run("timedatectl show --property=NTPSynchronized --value")
-    ok = r.stdout.strip().lower() == 'yes'
-    if ok:
-        return True, "System clock is NTP-synchronized"
-    return False, "System clock is NOT NTP-synchronized — RTC may be set to wrong time"
-
-
 def check_wittypi_i2c(addr):
     r = _run("i2cdetect -y 1")
     if r.returncode != 0:
@@ -511,9 +503,6 @@ def main():
     ok, msg = check_utc_timezone()
     _print_check(ok, msg)
     critical_fail |= not ok
-
-    ok, msg = check_ntp_sync()
-    _print_check(ok, msg, warn=not ok)  # warning only — don't hard-stop
 
     ok, msg = check_wittypi_i2c(i2c_addr)
     _print_check(ok, msg)
