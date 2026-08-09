@@ -74,7 +74,9 @@ python3 ./sync_rtc.py
 # run_power_manager.py runs as root; if a previous boot left wittyPi.log
 # owned by root, configure_wittypi.py (run as fishcam) will fail with
 # "Permission denied". Reset ownership to the current user at each boot.
+# touch first — chown silently fails if the file doesn't exist yet.
 if [ -n "$WITTYPI_DIR" ] && [ -d "$WITTYPI_DIR" ]; then
+    sudo touch "$WITTYPI_DIR/wittyPi.log" 2>/dev/null || true
     sudo chown "$USER:$USER" "$WITTYPI_DIR/wittyPi.log" 2>/dev/null || true
 fi
 

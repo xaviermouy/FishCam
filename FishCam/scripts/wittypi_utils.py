@@ -92,9 +92,12 @@ def sync_rtc_from_system(install_dir):
     Returns:
         (ok: bool, message: str)
     """
-    ok, out = run_wittypi_func(install_dir, 'system_to_rtc')
+    _, out = run_wittypi_func(install_dir, 'system_to_rtc')
     now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-    if ok:
+    # Use "Done" in output as the success indicator rather than exit code —
+    # a root-owned wittyPi.log causes a non-zero exit even when the I2C
+    # write itself succeeded.
+    if 'Done' in out:
         return True, f"WittyPi RTC synced from system clock  ({now_str} UTC)"
     return False, f"system_to_rtc failed: {out}"
 
@@ -112,8 +115,11 @@ def sync_rtc_from_ntp(install_dir):
         ntp_ok=False is a warning (not fatal) — RTC sync is always attempted.
         rtc_ok=False means the RTC write itself failed and is fatal.
     """
-    ok, out = run_wittypi_func(install_dir, 'net_to_system')
-    if ok and 'Done' in out:
+    _, out = run_wittypi_func(install_dir, 'net_to_system')
+    # Use "Done" in output as the success indicator rather than exit code —
+    # a root-owned wittyPi.log causes a non-zero exit even when the curl
+    # time fetch itself succeeded.
+    if 'Done' in out:
         now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         ntp_ok  = True
         ntp_msg = f"Network time applied to system clock  ({now_str} UTC)"
