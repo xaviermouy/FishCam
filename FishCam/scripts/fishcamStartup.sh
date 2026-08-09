@@ -107,6 +107,14 @@ else
     python3 ./run_buzzer.py >> "$LOG_DIR/buzzer_$(hostname).log" 2>&1 &
 fi
 
+# Start status API server in background (only reachable in config mode when WiFi is up)
+if pgrep -f "run_api.py" > /dev/null; then
+    echo "Status API already running, skipping..."
+else
+    echo "Starting status API..."
+    python3 ./run_api.py >> "$LOG_DIR/api_$(hostname).log" 2>&1 &
+fi
+
 # Start video capture (runs in foreground)
 echo "Starting video capture..."
 python3 ./run_video.py

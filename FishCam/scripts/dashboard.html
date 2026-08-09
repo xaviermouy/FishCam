@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FishCam Dashboard</title>
+<style>
+  /* ── Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:     #1a1a1a;
+    --card:   #2d2d2d;
+    --border: #404040;
+    --text:   #e0e0e0;
+    --muted:  #a0a0a0;
+    --green:  #4caf50;
+    --yellow: #ff9800;
+    --red:    #f44336;
+    --grey:   #757575;
+    --blue:   #2196f3;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 16px;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #countdown {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── Buttons ── */
+  button {
+    background: #3a3a3a;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+  button:hover  { background: #4a4a4a; }
+  button:active { background: #555; }
+  button.primary {
+    background: var(--blue);
+    border-color: var(--blue);
+  }
+  button.primary:hover { background: #1976d2; }
+
+  /* ── Grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .card.offline { opacity: 0.5; }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #333;
+  }
+  .card-header .fishcam-id {
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .card-header .last-updated {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .offline-badge {
+    background: var(--grey);
+    color: #fff;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .card-body { padding: 12px 16px; }
+
+  /* ── Section ── */
+  .section { margin-bottom: 12px; }
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .section-rows { display: flex; flex-direction: column; gap: 4px; }
+
+  /* ── Row ── */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .row-label {
+    width: 110px;
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .row-value { flex: 1; }
+
+  /* ── Dot / Status ── */
+  .dot { font-size: 10px; }
+  .green  { color: var(--green); }
+  .yellow { color: var(--yellow); }
+  .red    { color: var(--red); }
+  .grey   { color: var(--grey); }
+  .muted  { color: var(--muted); }
+
+  /* ── Disk bar ── */
+  .disk-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+  .disk-bar {
+    flex: 1;
+    height: 6px;
+    background: #555;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .disk-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+
+  /* ── Sync result ── */
+  .sync-result {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    word-break: break-word;
+  }
+  .sync-result.ok  { color: var(--green); }
+  .sync-result.err { color: var(--red); }
+
+  /* ── Divider ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 10px 0;
+  }
+
+  /* ── No fishcams ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-state h2 { margin-bottom: 8px; }
+
+  /* ── Spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>FishCam Dashboard</h1>
+  <div class="header-controls">
+    <span id="countdown">Discovering…</span>
+    <button onclick="manualRefresh()">Refresh</button>
+  </div>
+</div>
+
+<div class="grid" id="grid">
+  <div class="empty-state">
+    <div class="spinner"></div>
+    <p style="margin-top:12px">Discovering FishCam units…</p>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Configuration ────────────────────────────────────────────────────────────
+const FISHCAM_COUNT    = 20;
+const API_PORT         = 5000;
+const REFRESH_INTERVAL = 15;   // seconds between full refreshes
+const DISCOVERY_TIMEOUT_MS = 3000;
+
+// ── State ────────────────────────────────────────────────────────────────────
+let discovered   = {};   // { hostname: { status: 'online'|'offline', data: {...} } }
+let countdownVal = REFRESH_INTERVAL;
+let countdownTimer;
+let refreshTimer;
+
+// ── Discovery ─────────────────────────────────────────────────────────────────
+async function probeFishcam(hostname) {
+  const url = `http://${hostname}:${API_PORT}/status`;
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(tid);
+    if (!resp.ok) return { online: false };
+    const data = await resp.json();
+    return { online: true, data };
+  } catch {
+    clearTimeout(tid);
+    return { online: false };
+  }
+}
+
+async function discover() {
+  const hostnames = [];
+  for (let i = 1; i <= FISHCAM_COUNT; i++) {
+    hostnames.push(`fishcam${String(i).padStart(2, '0')}.local`);
+  }
+
+  const results = await Promise.allSettled(hostnames.map(h => probeFishcam(h)));
+
+  discovered = {};
+  results.forEach((r, i) => {
+    const hostname = hostnames[i];
+    if (r.status === 'fulfilled' && r.value.online) {
+      discovered[hostname] = { online: true, data: r.value.data };
+    }
+  });
+
+  render();
+}
+
+// ── Per-unit refresh ──────────────────────────────────────────────────────────
+async function refreshAll() {
+  if (Object.keys(discovered).length === 0) {
+    await discover();
+    return;
+  }
+  const hostnames = Object.keys(discovered);
+  await Promise.allSettled(hostnames.map(async h => {
+    const result = await probeFishcam(h);
+    if (result.online) {
+      discovered[h] = { online: true, data: result.data };
+    } else {
+      discovered[h] = { online: false, data: discovered[h]?.data };
+    }
+  }));
+  render();
+}
+
+// ── Sync RTC ──────────────────────────────────────────────────────────────────
+async function syncRtc(hostname, btnEl, resultEl) {
+  btnEl.disabled = true;
+  btnEl.textContent = 'Syncing…';
+  resultEl.textContent = '';
+  resultEl.className = 'sync-result';
+
+  try {
+    const resp = await fetch(`http://${hostname}:${API_PORT}/sync_rtc`, { method: 'POST' });
+    const d    = await resp.json();
+    const ok   = d.ntp_ok && d.rtc_ok;
+    resultEl.textContent = ok
+      ? `NTP: ${d.ntp_msg} | RTC: ${d.rtc_msg}`
+      : `NTP: ${d.ntp_msg} | RTC: ${d.rtc_msg}`;
+    resultEl.className = 'sync-result ' + (ok ? 'ok' : 'err');
+  } catch (e) {
+    resultEl.textContent = `Error: ${e.message}`;
+    resultEl.className = 'sync-result err';
+  } finally {
+    btnEl.disabled  = false;
+    btnEl.textContent = 'Sync Time';
+  }
+}
+
+// ── Rendering helpers ─────────────────────────────────────────────────────────
+function dot(color) {
+  return `<span class="dot ${color}">●</span>`;
+}
+
+function fmtAge(age_s) {
+  if (age_s == null) return '';
+  if (age_s < 60)  return `${age_s}s ago`;
+  const m = Math.floor(age_s / 60);
+  const s = age_s % 60;
+  return `${m}m ${s}s ago`;
+}
+
+function voltageClass(v, low_v, rec_v) {
+  if (v == null) return 'grey';
+  if (low_v > 0 && v < low_v) return 'red';
+  if (rec_v > 0 && v < rec_v) return 'yellow';
+  return 'green';
+}
+
+function diskColor(pct) {
+  if (pct == null) return 'grey';
+  if (pct > 90) return 'red';
+  if (pct > 75) return 'yellow';
+  return 'green';
+}
+
+function tempClass(t) {
+  if (t == null) return 'grey';
+  if (t > 80) return 'red';
+  if (t > 70) return 'yellow';
+  return 'green';
+}
+
+function renderCard(hostname, entry) {
+  const online = entry.online;
+  const d      = entry.data;
+  const cardId = 'card-' + hostname.replace(/\./g, '-');
+
+  if (!online && !d) {
+    // Never responded — skip entirely
+    return '';
+  }
+
+  const offlineBadge = !online
+    ? `<span class="offline-badge">Offline</span>`
+    : '';
+
+  const lastUpdated = d?.time
+    ? `<span class="last-updated">${d.time}</span>`
+    : `<span class="last-updated">-</span>`;
+
+  const fishcamLabel = d?.fishcam_id || hostname;
+
+  let body = '';
+
+  if (d) {
+    // ── PROCESSES ──
+    const procRows = (d.processes || []).map(p => {
+      const color = p.running ? 'green' : 'red';
+      const detail = p.running
+        ? `PID ${p.pid} &nbsp; up ${p.uptime}`
+        : 'STOPPED';
+      return `<div class="row">
+        <span class="row-label">${p.label}</span>
+        <span class="row-value">${dot(color)} ${detail}</span>
+      </div>`;
+    }).join('');
+
+    // ── ACQUISITION ──
+    const acq      = d.acquisition || {};
+    const procMap  = {};
+    (d.processes || []).forEach(p => { procMap[p.label] = p.running; });
+
+    function acqRow(key, label, procLabel) {
+      const info    = acq[key] || {};
+      const active  = info.active;
+      const age_s   = info.age_s;
+      const running = procMap[procLabel] || false;
+      let color, detail;
+      if (active) {
+        color  = 'green';
+        detail = 'ACTIVE &nbsp; ' + fmtAge(age_s);
+      } else if (running) {
+        color  = 'red';
+        detail = 'INACTIVE &nbsp; ' + (age_s != null ? fmtAge(age_s) : 'no recent file');
+      } else {
+        color  = 'grey';
+        detail = 'STOPPED';
+      }
+      return `<div class="row">
+        <span class="row-label">${label}</span>
+        <span class="row-value">${dot(color)} ${detail}</span>
+      </div>`;
+    }
+    const acqRows = acqRow('video', 'Video', 'Video')
+                  + acqRow('imu',   'IMU',   'IMU');
+
+    // ── BUZZER ──
+    const bz = d.buzzer || {};
+    let buzzerContent = '';
+    if (!bz.enabled) {
+      buzzerContent = `<span class="yellow">DISABLED</span>`;
+    } else {
+      const nextColor = (bz.next_in_min != null && bz.next_in_min > 5) ? 'green' : 'yellow';
+      const nextStr   = bz.next_local
+        ? `${bz.next_local} local${bz.next_utc ? ' / ' + bz.next_utc + ' UTC' : ''}` +
+          (bz.next_in_min != null ? ` (in ${bz.next_in_min.toFixed(1)}m)` : '')
+        : '-';
+      const lastStr  = bz.last_local
+        ? `${bz.last_local} local${bz.last_utc ? ' / ' + bz.last_utc + ' UTC' : ''}`
+        : '-';
+      buzzerContent = `
+        <div class="row">
+          <span class="row-label">Next</span>
+          <span class="row-value ${nextColor}">${nextStr}</span>
+        </div>
+        <div class="row">
+          <span class="row-label">Last</span>
+          <span class="row-value">${lastStr}</span>
+        </div>`;
+    }
+
+    // ── HARDWARE ──
+    const cam = Array.isArray(d.camera) ? d.camera : [null, '?'];
+    const imu = Array.isArray(d.imu_bus) ? d.imu_bus : [null, '?'];
+    const camOk  = cam[0];
+    const camStr = cam[1] || '?';
+    const imuOk  = imu[0];
+    const imuStr = imu[1] || '?';
+
+    const camColor = camOk === true ? 'green' : camOk === false ? 'red' : 'yellow';
+    const imuColor = imuOk === true ? 'green' : imuOk === false ? 'red' : 'yellow';
+    const camSym   = camOk === true ? '✓' : camOk === false ? '✗' : '?';
+    const imuSym   = imuOk === true ? '✓' : imuOk === false ? '✗' : '?';
+
+    const v     = d.voltage;
+    const lowV  = d.voltage_low_v || 0;
+    const recV  = d.voltage_rec_v || 0;
+    const vClass = voltageClass(v, lowV, recV);
+    const vStr  = v != null ? `${v.toFixed(1)} V` : 'n/a';
+    const vThresh = lowV > 0 ? `(cutoff ${lowV}V / recovery ${recV}V)` : '(protection disabled)';
+
+    // ── SYSTEM ──
+    const temp     = d.cpu_temp;
+    const tClass   = tempClass(temp);
+    const tStr     = temp != null ? `${temp.toFixed(1)}°C` : 'n/a';
+    const st       = d.storage || {};
+    const pct      = st.pct;
+    const dColor   = diskColor(pct);
+    const dStr     = (st.used_gb != null && st.total_gb != null)
+      ? `${st.used_gb.toFixed(1)} / ${st.total_gb.toFixed(0)} GB (${pct != null ? pct.toFixed(0) : '?'}%)`
+      : 'unavailable';
+    const fillPct  = pct != null ? Math.min(100, pct) : 0;
+    const vidCount = st.video_count != null ? `${st.video_count} video files` : '';
+    const imuCount = st.imu_count  != null ? ` / ${st.imu_count} IMU files`  : '';
+
+    // ── LOG ERRORS ──
+    const errorLogs = (d.logs || []).filter(l => l.err_1h > 0);
+    const errorRows = errorLogs.length === 0
+      ? '<div class="row muted">No errors in last hour</div>'
+      : errorLogs.map(l =>
+          `<div class="row">
+            <span class="row-label">${l.name}</span>
+            <span class="row-value red">${l.err_1h} error${l.err_1h > 1 ? 's' : ''}/hr</span>
+          </div>`
+        ).join('');
+
+    body = `
+      <section class="section">
+        <div class="section-label">Processes</div>
+        <div class="section-rows">${procRows}</div>
+      </section>
+      <hr class="divider">
+      <section class="section">
+        <div class="section-label">Acquisition</div>
+        <div class="section-rows">${acqRows}</div>
+      </section>
+      <hr class="divider">
+      <section class="section">
+        <div class="section-label">Buzzer</div>
+        <div class="section-rows">${buzzerContent}</div>
+      </section>
+      <hr class="divider">
+      <section class="section">
+        <div class="section-label">Hardware</div>
+        <div class="section-rows">
+          <div class="row">
+            <span class="row-label">Camera</span>
+            <span class="row-value ${camColor}">${camSym} ${camStr}</span>
+          </div>
+          <div class="row">
+            <span class="row-label">IMU I2C</span>
+            <span class="row-value ${imuColor}">${imuSym} ${imuStr}</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Voltage</span>
+            <span class="row-value ${vClass}">${vStr} <span class="muted" style="font-size:11px">${vThresh}</span></span>
+          </div>
+        </div>
+      </section>
+      <hr class="divider">
+      <section class="section">
+        <div class="section-label">System</div>
+        <div class="section-rows">
+          <div class="row">
+            <span class="row-label">CPU Temp</span>
+            <span class="row-value ${tClass}">${tStr}</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Disk</span>
+            <span class="row-value">
+              <div class="disk-bar-wrap">
+                <div class="disk-bar">
+                  <div class="disk-bar-fill ${dColor}" style="width:${fillPct}%; background:var(--${dColor})"></div>
+                </div>
+                <span class="${dColor}">${dStr}</span>
+              </div>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-label">Uptime</span>
+            <span class="row-value">${d.uptime || '-'}</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Files</span>
+            <span class="row-value muted">${vidCount}${imuCount}</span>
+          </div>
+        </div>
+      </section>
+      <hr class="divider">
+      <section class="section">
+        <div class="section-label">Log Errors (last hour)</div>
+        <div class="section-rows">${errorRows}</div>
+      </section>
+      <hr class="divider">
+      <section class="section">
+        <button class="primary" onclick="handleSync('${hostname}', this)">Sync Time</button>
+        <div class="sync-result" id="sync-result-${cardId}"></div>
+      </section>
+    `;
+  }
+
+  return `
+    <div class="card ${online ? '' : 'offline'}" id="${cardId}">
+      <div class="card-header">
+        <span class="fishcam-id">${fishcamLabel}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${lastUpdated}
+          ${offlineBadge}
+        </div>
+      </div>
+      <div class="card-body">${body}</div>
+    </div>`;
+}
+
+function render() {
+  const grid = document.getElementById('grid');
+  const keys = Object.keys(discovered);
+
+  if (keys.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <h2>No FishCam units found</h2>
+        <p>Make sure units are powered on, connected to WiFi, and the API is running on port ${API_PORT}.</p>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = keys.map(h => renderCard(h, discovered[h])).join('');
+}
+
+// ── Sync button handler ───────────────────────────────────────────────────────
+function handleSync(hostname, btnEl) {
+  const cardId   = 'card-' + hostname.replace(/\./g, '-');
+  const resultEl = document.getElementById(`sync-result-${cardId}`);
+  syncRtc(hostname, btnEl, resultEl);
+}
+
+// ── Countdown + auto-refresh ──────────────────────────────────────────────────
+function startCountdown() {
+  clearInterval(countdownTimer);
+  clearTimeout(refreshTimer);
+  countdownVal = REFRESH_INTERVAL;
+  updateCountdown();
+
+  countdownTimer = setInterval(() => {
+    countdownVal--;
+    updateCountdown();
+    if (countdownVal <= 0) {
+      clearInterval(countdownTimer);
+      document.getElementById('countdown').textContent = 'Refreshing…';
+      refreshAll().finally(() => startCountdown());
+    }
+  }, 1000);
+}
+
+function updateCountdown() {
+  document.getElementById('countdown').textContent = `Refreshing in ${countdownVal}s`;
+}
+
+function manualRefresh() {
+  clearInterval(countdownTimer);
+  document.getElementById('countdown').textContent = 'Refreshing…';
+  refreshAll().finally(() => startCountdown());
+}
+
+// ── Bootstrap ────────────────────────────────────────────────────────────────
+(async function init() {
+  await discover();
+  startCountdown();
+})();
+</script>
+</body>
+</html>

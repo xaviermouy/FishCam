@@ -166,3 +166,7 @@ paths:
   log_dir: '../data/logs'     # Directory for log files
   imu_dir: '../data/imu'      # Directory for IMU CSV files
   gps_dir: '../data/gps'      # Directory for GPS files (future)
+
+# API Settings
+api:
+  port: 5000  # HTTP port for the status API and dashboard

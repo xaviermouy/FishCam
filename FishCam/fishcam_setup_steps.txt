@@ -92,8 +92,15 @@
       does NOT work because systemd-journald-flush.service is absent.
       raspi-config is the only supported method.
 
-  A9. Mark the fishcam number on the SD card (with a sharpie)
+  A9. Install the web dashboard dependency (Flask)
       ────────────────────────────────────────────────────────────────────────
+      pip install flask
+
+          NOTE: On newer Raspberry Pi OS add --break-system-packages:
+              pip install --break-system-packages flask
+
+  A10. Mark the fishcam number on the SD card (with a sharpie)
+       ───────────────────────────────────────────────────────────────────────
 
 
 ================================================================================
@@ -219,6 +226,16 @@
       # Press q to quit
       # Safe to run at any time: reads directly from I2C when run_imu.py
       # is not active, or reads from the live CSV when it is.
+
+  Web dashboard  (monitor all fishcams on the network from a browser)
+  ──────────────────────────────────────────────────────────────────
+      Open dashboard.html in a browser while on the same WiFi network as
+      the fishcams. The page auto-discovers all units (fishcam01..20.local)
+      and shows processes, acquisition status, hardware, and logs.
+
+      Each fishcam runs a local API server on port 5000; it starts
+      automatically on boot via fishcamStartup.sh.
+      Access a single unit directly: http://fishcam01.local:5000/
 
   Power saving status report
   ──────────────────────────────────────────────────────────────────
