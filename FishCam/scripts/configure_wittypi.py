@@ -33,7 +33,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 import config
-from wittypi_utils import run_wittypi_func, sync_rtc_from_system
+from wittypi_utils import run_wittypi_func, sync_rtc_from_ntp
 
 SCHEDULE_FILENAME    = 'schedule.wpi'
 TIMELINE_CHARS       = 72          # width of the 24 h bar (1 char = 20 min)
@@ -645,9 +645,10 @@ def main():
     print("  APPLYING CONFIGURATION")
     print("  " + "─" * 50)
 
-    ok, msg = sync_rtc_from_system(install_dir)
-    _print_check(ok, msg)
-    if not ok:
+    ntp_ok, ntp_msg, rtc_ok, rtc_msg = sync_rtc_from_ntp(install_dir)
+    _print_check(ntp_ok, ntp_msg, warn=not ntp_ok)
+    _print_check(rtc_ok, rtc_msg)
+    if not rtc_ok:
         print("  RTC sync failed — aborting. Check that utilities.sh is present and the user is in the i2c group.")
         sys.exit(1)
 

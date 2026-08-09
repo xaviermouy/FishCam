@@ -32,30 +32,12 @@ from wittypi_utils import (
     is_rtc_sync_due,
     record_rtc_sync,
     get_rtc_sync_state_path,
+    is_wifi_up,
+    is_ntp_synced,
 )
 
 MAX_NTP_ATTEMPTS  = 3
 NTP_RETRY_DELAY_S = 20
-
-
-def is_wifi_up():
-    """Return True if the wlan0 interface is up and associated."""
-    try:
-        return Path('/sys/class/net/wlan0/operstate').read_text().strip() == 'up'
-    except OSError:
-        return False
-
-
-def is_ntp_synced():
-    """Return True if timedatectl reports the system clock as NTP-synchronized."""
-    try:
-        r = subprocess.run(
-            ['timedatectl', 'show', '--property=NTPSynchronized', '--value'],
-            capture_output=True, text=True, timeout=5,
-        )
-        return r.stdout.strip().lower() == 'yes'
-    except Exception:
-        return False
 
 
 def main():

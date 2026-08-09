@@ -50,6 +50,29 @@ def run_wittypi_func(install_dir, bash_cmd):
     return r.returncode == 0, (r.stdout + r.stderr).strip()
 
 
+# ── NTP helpers ──────────────────────────────────────────────────────────────
+
+def is_wifi_up():
+    """Return True if the wlan0 interface is up and associated."""
+    try:
+        return (Path('/sys/class/net/wlan0/operstate')
+                .read_text().strip() == 'up')
+    except OSError:
+        return False
+
+
+def is_ntp_synced():
+    """Return True if timedatectl reports the system clock as NTP-synchronized."""
+    try:
+        r = subprocess.run(
+            ['timedatectl', 'show', '--property=NTPSynchronized', '--value'],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.stdout.strip().lower() == 'yes'
+    except Exception:
+        return False
+
+
 # ── RTC sync ──────────────────────────────────────────────────────────────────
 
 def sync_rtc_from_system(install_dir):
@@ -74,6 +97,32 @@ def sync_rtc_from_system(install_dir):
     if ok:
         return True, f"WittyPi RTC synced from system clock  ({now_str} UTC)"
     return False, f"system_to_rtc failed: {out}"
+
+
+def sync_rtc_from_ntp(install_dir):
+    """Sync internet time to system clock, then push system clock to WittyPi RTC.
+
+    Uses WittyPi's own net_to_system() which fetches the current time from
+    Google's HTTP Date header (no NTP daemon required, no chrony dependency).
+    Falls back gracefully if internet is unreachable — the RTC is still
+    updated from the current system clock with a warning.
+
+    Returns:
+        (ntp_ok: bool, ntp_msg: str, rtc_ok: bool, rtc_msg: str)
+        ntp_ok=False is a warning (not fatal) — RTC sync is always attempted.
+        rtc_ok=False means the RTC write itself failed and is fatal.
+    """
+    ok, out = run_wittypi_func(install_dir, 'net_to_system')
+    if ok and 'Done' in out:
+        now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        ntp_ok  = True
+        ntp_msg = f"Network time applied to system clock  ({now_str} UTC)"
+    else:
+        ntp_ok  = False
+        ntp_msg = f"Could not get network time — system clock unchanged  ({out.strip()})"
+
+    rtc_ok, rtc_msg = sync_rtc_from_system(install_dir)
+    return ntp_ok, ntp_msg, rtc_ok, rtc_msg
 
 
 # ── RTC sync state file ───────────────────────────────────────────────────────
@@ -110,24 +159,14 @@ def record_rtc_sync(state_file):
 # ── Voltage reading ───────────────────────────────────────────────────────────
 
 def read_wittypi_voltage(install_dir):
-    """Read WittyPi input voltage via utilities.sh.
-
-    Reads the raw Vin register using WittyPi's own i2c_read function.
-    The Vin calibration adjustment (set via WittyPi menu > other settings >
-    Vin adjustment) is only applied in wittyPi.sh, not in utilities.sh, so
-    it cannot be retrieved here. The raw reading may differ from the WittyPi
-    menu display by the configured adjustment offset (typically ~0.2 V).
+    """Read WittyPi input voltage via utilities.sh get_input_voltage().
 
     Returns:
         float: voltage in volts, or None if the read fails (WittyPi not
                connected, utilities.sh missing, I2C error, etc.)
     """
-    bash_cmd = (
-        'vin=$(i2c_read 0x01 $I2C_MC_ADDRESS $I2C_CONF_VIN) && '
-        'awk "BEGIN{printf \\"%.1f\\", $vin/10}"'
-    )
     try:
-        ok, out = run_wittypi_func(install_dir, bash_cmd)
+        ok, out = run_wittypi_func(install_dir, 'get_input_voltage')
         if ok and out.strip():
             return float(out.strip())
     except Exception:
