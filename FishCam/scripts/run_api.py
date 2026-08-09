@@ -46,11 +46,16 @@ app = Flask(__name__)
 def _add_cors(response):
     """Add CORS headers so the dashboard can be loaded from any origin.
 
+    Reflects the requesting Origin back rather than using '*', because
+    '*' does not match 'null' (the origin sent by file:// pages in Chrome).
+    Without this, opening dashboard.html from a local file blocks all fetches.
+
     Access-Control-Allow-Private-Network is required by Chrome's Private
-    Network Access (PNA) policy when a local file (file://) fetches from
-    a private IP address (10.x.x.x, 192.168.x.x, etc.).
+    Network Access (PNA) policy when a local file fetches from a private IP.
     """
-    response.headers['Access-Control-Allow-Origin']          = '*'
+    origin = request.headers.get('Origin')
+    response.headers['Access-Control-Allow-Origin']          = origin if origin else '*'
+    response.headers['Access-Control-Allow-Credentials']     = 'true'
     response.headers['Access-Control-Allow-Private-Network'] = 'true'
     response.headers['Access-Control-Allow-Methods']         = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers']         = 'Content-Type'
@@ -60,8 +65,9 @@ def _add_cors(response):
 @app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
 @app.route('/<path:path>', methods=['OPTIONS'])
 def handle_options(path):
-    """Respond to CORS preflight requests (Chrome PNA sends OPTIONS first)."""
-    return _add_cors(app.response_class())
+    """Respond to CORS preflight requests (Chrome sends OPTIONS before fetch)."""
+    response = app.response_class(status=204)
+    return _add_cors(response)
 
 
 app.after_request(_add_cors)
