@@ -11,6 +11,9 @@ if [ -f "$WITTYPI_UTILS" ]; then
     bash -c "source \"$WITTYPI_UTILS\" && rtc_to_system" \
         && echo "System clock synced from WittyPi RTC" \
         || echo "WARNING: Failed to sync system clock from WittyPi RTC (non-fatal)"
+    # rtc_to_system disables NTP (timedatectl set-ntp 0) to avoid conflicts
+    # while setting the clock. Re-enable it so the system can sync via NTP.
+    sudo timedatectl set-ntp true 2>/dev/null || true
 else
     echo "WARNING: WittyPi utilities.sh not found — skipping RTC sync"
 fi
