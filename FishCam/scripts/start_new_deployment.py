@@ -134,7 +134,18 @@ def main():
                 utc_str = '(timezone unknown)'
             print(f'  {str(t):<35}  {utc_str}')
         print()
-        print(f'  Beep count per sequence : {buzzer_cfg["beep_count"]}')
+        if buzzer_cfg.get('sequence_mode', 'beep') == 'msequence':
+            n            = buzzer_cfg['msequence_n']
+            chip_dur     = buzzer_cfg['chip_duration_sec']
+            seq_len      = (1 << n) - 1
+            seq_duration = seq_len * chip_dur
+            print(f'  Sequence mode           : m-sequence')
+            print(f'  M-sequence n            : {n}  (sequence length: {seq_len} chips, {seq_duration:.1f}s)')
+            print(f'  Chip duration           : {chip_dur}s')
+            print(f'  Unit sequence           : derived automatically from hostname')
+        else:
+            print(f'  Sequence mode           : beep (legacy)')
+            print(f'  Beep count per sequence : {buzzer_cfg["beep_count"]}')
         print(f'  Sequences per trigger   : {buzzer_cfg["number_sequences"]}')
         print(f'  Missed trigger grace    : {buzzer_cfg["missed_trigger_grace_sec"]}s')
         print()

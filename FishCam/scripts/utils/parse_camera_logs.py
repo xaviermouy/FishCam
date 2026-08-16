@@ -168,7 +168,17 @@ def parse_buzzer_sequences(log_file_path):
 
     # Pattern for the per-sequence line logged by run_buzzer.py
     # Example: "2026-07-30 08:00:00,678 INFO Sequence 1/5 at 08:00:00.678"
-    seq_pattern     = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+\s+INFO\s+Sequence\s+(\d+/\d+)\s+at\s+([\d:\.]+)'
+    seq_pattern      = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+\s+INFO\s+Sequence\s+(\d+/\d+)\s+at\s+([\d:\.]+)'
+
+    # msequence mode startup patterns
+    seq_mode_pattern = r'INFO\s+Sequence mode\s+:\s+(\w+)'
+    mseq_n_pattern   = r'INFO\s+M-sequence n\s+:\s+(\d+)'
+    chip_dur_pattern = r'INFO\s+Chip duration\s+:\s+([\d.]+)'
+    seq_len_pattern  = r'INFO\s+Sequence length\s+:\s+(\d+)\s+chips'
+    unit_num_pattern = r'INFO\s+Unit number\s+:\s+(\d+)'
+    seq_pat_pattern  = r'INFO\s+Sequence pattern\s+:\s+([\d,]+)'
+
+    # beep (legacy) mode startup patterns
     beep_cnt_pattern = r'INFO\s+Beeps per sequence\s+:\s+(\d+)'
     beep_dur_pattern = r'INFO\s+Beep duration\s+:\s+([\d.]+)'
     beep_gap_pattern = r'INFO\s+Gap between beeps\s+:\s+([\d.]+)'
@@ -177,12 +187,36 @@ def parse_buzzer_sequences(log_file_path):
         with open(log_file_path, 'r') as f:
             lines = f.readlines()
 
-        # Read startup config values (may appear multiple times across sessions)
+        # Startup config values — updated on each new session start in the log
+        seq_mode   = 'beep'   # default for old logs without sequence_mode line
+        mseq_n     = None
+        chip_dur   = None
+        seq_len    = None
+        unit_num   = None
+        seq_pattern_str = None
         beep_count = None
         beep_dur   = None
         beep_gap   = None
 
         for line in lines:
+            m = re.search(seq_mode_pattern, line)
+            if m:
+                seq_mode = m.group(1)
+            m = re.search(mseq_n_pattern, line)
+            if m:
+                mseq_n = int(m.group(1))
+            m = re.search(chip_dur_pattern, line)
+            if m:
+                chip_dur = float(m.group(1))
+            m = re.search(seq_len_pattern, line)
+            if m:
+                seq_len = int(m.group(1))
+            m = re.search(unit_num_pattern, line)
+            if m:
+                unit_num = int(m.group(1))
+            m = re.search(seq_pat_pattern, line)
+            if m:
+                seq_pattern_str = m.group(1)
             m = re.search(beep_cnt_pattern, line)
             if m:
                 beep_count = int(m.group(1))
@@ -193,7 +227,7 @@ def parse_buzzer_sequences(log_file_path):
             if m:
                 beep_gap = float(m.group(1))
 
-            # Match sequence lines
+            # Match per-sequence timestamp lines
             m = re.search(seq_pattern, line)
             if m:
                 date_str = m.group(1)   # YYYY-MM-DD HH:MM:SS
@@ -214,6 +248,14 @@ def parse_buzzer_sequences(log_file_path):
                     results.append({
                         'datetime':         dt,
                         'sequence':         sequence,
+                        'sequence_mode':    seq_mode,
+                        # msequence fields
+                        'msequence_n':      mseq_n,
+                        'chip_duration':    chip_dur,
+                        'sequence_length':  seq_len,
+                        'unit_number':      unit_num,
+                        'sequence_pattern': seq_pattern_str,
+                        # beep (legacy) fields
                         'beeps':            beep_count,
                         'beep_duration':    beep_dur,
                         'gap_between_beeps': beep_gap,
@@ -330,17 +372,26 @@ def save_buzzer_sequences_csv(data, output_file):
         return
 
     with open(output_file, 'w', newline='') as csvfile:
-        fieldnames = ['datetime', 'sequence', 'beeps', 'beep_duration', 'gap_between_beeps']
+        fieldnames = [
+            'datetime', 'sequence', 'sequence_mode',
+            'msequence_n', 'chip_duration', 'sequence_length', 'unit_number',
+            'beeps', 'beep_duration', 'gap_between_beeps',
+        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         writer.writeheader()
         for row in data:
             writer.writerow({
-                'datetime': row['datetime'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],  # Include milliseconds
-                'sequence': row['sequence'],
-                'beeps': row['beeps'],
-                'beep_duration': row['beep_duration'],
-                'gap_between_beeps': row['gap_between_beeps']
+                'datetime':        row['datetime'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'sequence':        row['sequence'],
+                'sequence_mode':   row.get('sequence_mode', ''),
+                'msequence_n':     row.get('msequence_n', ''),
+                'chip_duration':   row.get('chip_duration', ''),
+                'sequence_length': row.get('sequence_length', ''),
+                'unit_number':     row.get('unit_number', ''),
+                'beeps':           row.get('beeps', ''),
+                'beep_duration':   row.get('beep_duration', ''),
+                'gap_between_beeps': row.get('gap_between_beeps', ''),
             })
 
     print(f"Buzzer sequences saved to {output_file}")

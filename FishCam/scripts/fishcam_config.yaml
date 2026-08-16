@@ -44,13 +44,39 @@ network:
   wifi_password: "Fi$hCam2000"  # WiFi password
 
 # Buzzer Settings
-# Each FishCam unit has a unique beep_count so recordings can be identified by ear.
 # The buzzer fires at each time listed in trigger_times every day.
+# Two sequence modes are supported:
+#
+#   msequence (recommended):
+#     Each unit plays a unique m-sequence (maximal-length binary sequence) derived
+#     automatically from the unit number in the hostname (e.g. fishcam02 → unit 2).
+#     Provides excellent autocorrelation properties for TDOA cross-correlation.
+#     No per-unit config edit needed — the hostname drives the sequence selection.
+#
+#   beep (legacy):
+#     Each unit plays a fixed number of on/off beeps. Requires beep_count to be
+#     set uniquely per unit. Kept for backwards compatibility.
+#
 buzzer:
   enabled: true  # Enable/disable buzzer functionality
   pin: 26  # GPIO pin number for buzzer (BCM numbering)
 
-  # Times of day to trigger beep sequences (24-hour HH:MM format - in local/deployment time zone)
+  # Sequence mode: 'msequence' or 'beep'
+  sequence_mode: 'msequence'
+
+  # --- M-sequence parameters (used when sequence_mode = 'msequence') ---
+  # msequence_n: LFSR shift register length. Sequence length = 2^n - 1.
+  #   n=5 → 31 chips (3.1s at 0.1s/chip)   supports up to 6 units
+  #   n=6 → 63 chips (6.3s at 0.1s/chip)   supports up to 6 units
+  msequence_n: 6
+  chip_duration_sec: 0.1  # Duration of each chip (on or off) in seconds
+
+  # --- Legacy beep parameters (used when sequence_mode = 'beep') ---
+  beep_count: 4              # Beeps per sequence — must be set uniquely per fishcam unit
+  beep_duration_sec: 0.1    # Duration of each beep in seconds
+  beep_gap_sec: 0.1         # Silence between beeps within a sequence
+
+  # Times of day to trigger sequences (24-hour HH:MM format - in local/deployment time zone)
   trigger_times:
     - "10:00"
     - "12:00"
