@@ -275,7 +275,7 @@
 // ── Configuration ────────────────────────────────────────────────────────────
 const API_PORT         = 5000;
 const REFRESH_INTERVAL = 15;    // seconds between auto-refreshes
-const SCAN_TIMEOUT_MS  = 1500;  // per-host timeout for subnet scan
+const SCAN_TIMEOUT_MS  = 5000;  // per-host timeout for subnet scan (Pi Zero 2W needs ~2s)
 const MDNS_TIMEOUT_MS  = 3000;  // per-host timeout for .local probes (mDNS needs more time)
 const MDNS_MAX_UNIT    = 20;    // probe fishcam01.local … fishcam20.local
 
