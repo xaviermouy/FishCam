@@ -275,16 +275,57 @@
 // ── Configuration ────────────────────────────────────────────────────────────
 const API_PORT         = 5000;
 const REFRESH_INTERVAL = 15;    // seconds between auto-refreshes
-const SCAN_TIMEOUT_MS  = 1500;  // per-IP timeout — LAN devices respond fast
+const SCAN_TIMEOUT_MS  = 1500;  // per-host timeout for subnet scan
+const MDNS_TIMEOUT_MS  = 3000;  // per-host timeout for .local probes (mDNS needs more time)
+const MDNS_MAX_UNIT    = 20;    // probe fishcam01.local … fishcam20.local
 
 // ── State ────────────────────────────────────────────────────────────────────
-let discovered    = {};   // { ip: { online, data, ip } }
+let discovered    = {};   // { host: { online, data, host } }  host = IP or hostname
 let currentPrefix = null;
+let usingMdns     = false;  // true when discovered via .local hostnames
 let countdownVal  = REFRESH_INTERVAL;
 let countdownTimer;
 let scanning      = false;
 
-// ── Network detection ─────────────────────────────────────────────────────────
+// ── Generic host probe ────────────────────────────────────────────────────────
+// host can be an IP address or a hostname (e.g. fishcam01.local)
+async function probeHost(host, timeoutMs) {
+  const url  = `http://${host}:${API_PORT}/status`;
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), timeoutMs || SCAN_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(tid);
+    if (!resp.ok) return { online: false };
+    const data = await resp.json();
+    return { online: true, data, host };
+  } catch {
+    clearTimeout(tid);
+    return { online: false };
+  }
+}
+
+// ── mDNS discovery ───────────────────────────────────────────────────────────
+// Probe fishcam01.local … fishcamNN.local in parallel.
+// Works without knowing the subnet — relies on OS mDNS (Avahi / Bonjour).
+async function probeMdnsHosts() {
+  const probes = [];
+  for (let i = 1; i <= MDNS_MAX_UNIT; i++) {
+    const host = `fishcam${String(i).padStart(2, '0')}.local`;
+    probes.push(
+      probeHost(host, MDNS_TIMEOUT_MS).then(result => {
+        if (result.online) {
+          discovered[host] = { online: true, data: result.data, host };
+          renderDiscovering(null, null);   // show units as they come in
+        }
+      })
+    );
+  }
+  await Promise.allSettled(probes);
+  return Object.keys(discovered).length > 0;
+}
+
+// ── Network detection (WebRTC) ────────────────────────────────────────────────
 function getLocalIPPrefix() {
   return new Promise((resolve) => {
     try {
@@ -310,26 +351,10 @@ function getLocalIPPrefix() {
   });
 }
 
-// ── IP probe ──────────────────────────────────────────────────────────────────
-async function probeIP(ip) {
-  const url  = `http://${ip}:${API_PORT}/status`;
-  const ctrl = new AbortController();
-  const tid  = setTimeout(() => ctrl.abort(), SCAN_TIMEOUT_MS);
-  try {
-    const resp = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(tid);
-    if (!resp.ok) return { online: false };
-    const data = await resp.json();
-    return { online: true, data, ip };
-  } catch {
-    clearTimeout(tid);
-    return { online: false };
-  }
-}
-
 // ── Subnet scan ───────────────────────────────────────────────────────────────
 async function scanSubnet(prefix) {
   scanning      = true;
+  usingMdns     = false;
   currentPrefix = prefix;
   discovered    = {};
 
@@ -342,11 +367,11 @@ async function scanSubnet(prefix) {
 
   const probes = [];
   for (let i = 1; i <= 254; i++) {
-    const ip = `${prefix}.${i}`;
-    const p  = probeIP(ip).then(result => {
+    const host = `${prefix}.${i}`;
+    const p = probeHost(host).then(result => {
       probesDone++;
       if (result.online) {
-        discovered[ip] = { online: true, data: result.data, ip };
+        discovered[host] = { online: true, data: result.data, host };
         renderDiscovering(probesDone, total);
       } else if (probesDone % 25 === 0 || probesDone === total) {
         renderDiscovering(probesDone, total);
@@ -362,19 +387,25 @@ async function scanSubnet(prefix) {
 
 // ── Per-unit refresh ──────────────────────────────────────────────────────────
 async function refreshAll() {
-  if (Object.keys(discovered).length === 0) {
-    if (currentPrefix) {
+  const hosts = Object.keys(discovered);
+  if (hosts.length === 0) {
+    // No units known — re-run full discovery
+    if (usingMdns) {
+      await probeMdnsHosts();
+      render();
+    } else if (currentPrefix) {
       await scanSubnet(currentPrefix);
     }
     return;
   }
-  const ips = Object.keys(discovered);
-  await Promise.allSettled(ips.map(async ip => {
-    const result = await probeIP(ip);
+  // Re-probe each known host (works for both IPs and .local hostnames)
+  const timeout = usingMdns ? MDNS_TIMEOUT_MS : SCAN_TIMEOUT_MS;
+  await Promise.allSettled(hosts.map(async host => {
+    const result = await probeHost(host, timeout);
     if (result.online) {
-      discovered[ip] = { online: true, data: result.data, ip };
+      discovered[host] = { online: true, data: result.data, host };
     } else {
-      discovered[ip] = { online: false, data: discovered[ip]?.data, ip };
+      discovered[host] = { online: false, data: discovered[host]?.data, host };
     }
   }));
   render();
@@ -753,14 +784,38 @@ async function quickProbe(prefix) {
   // Uses IPs 1–20 as a fast check — avoids a full 254-IP scan just to detect.
   const probes = [];
   for (let i = 1; i <= 20; i++) {
-    probes.push(probeIP(`${prefix}.${i}`));
+    probes.push(probeHost(`${prefix}.${i}`));
   }
   const results = await Promise.allSettled(probes);
   return results.some(r => r.status === 'fulfilled' && r.value.online);
 }
 
 (async function init() {
-  // 1. Try WebRTC auto-detection
+  // 1. Try mDNS first — probe fishcamXX.local names in parallel.
+  //    Works without knowing the subnet; relies on OS mDNS (Avahi / Bonjour).
+  document.getElementById('countdown').textContent = 'Detecting…';
+  document.getElementById('grid').innerHTML = `
+    <div class="empty-state">
+      <div class="spinner"></div>
+      <p style="margin-top:12px">Scanning for FishCam units via mDNS (fishcamXX.local)…</p>
+    </div>`;
+
+  const mdnsFound = await probeMdnsHosts();
+  if (mdnsFound) {
+    usingMdns = true;
+    document.getElementById('subnet-status').textContent = '(via mDNS)';
+    render();
+    startCountdown();
+    return;
+  }
+
+  // 2. mDNS found nothing — try WebRTC subnet auto-detection
+  document.getElementById('grid').innerHTML = `
+    <div class="empty-state">
+      <div class="spinner"></div>
+      <p style="margin-top:12px">No units found via mDNS — detecting subnet…</p>
+    </div>`;
+
   const detected = await getLocalIPPrefix();
   if (detected) {
     document.getElementById('subnet-status').textContent = '(auto-detected)';
@@ -769,7 +824,7 @@ async function quickProbe(prefix) {
     return;
   }
 
-  // 2. WebRTC failed — try known hotspot subnets
+  // 3. WebRTC failed — try known hotspot subnets
   document.getElementById('subnet-status').textContent = 'Trying common subnets…';
   document.getElementById('grid').innerHTML = `
     <div class="empty-state">
@@ -788,13 +843,14 @@ async function quickProbe(prefix) {
     }
   }
 
-  // 3. Nothing found automatically — prompt for manual input
+  // 4. Nothing found automatically — prompt for manual input
   document.getElementById('subnet-status').textContent = 'Not detected';
   document.getElementById('grid').innerHTML = `
     <div class="empty-state">
-      <h2>Enter your subnet</h2>
-      <p>Type the first three parts of your network address<br>
-         then tap <strong>Scan</strong>.</p>
+      <h2>No FishCam units found</h2>
+      <p>mDNS scan (fishcamXX.local) and subnet detection both failed.</p>
+      <p style="margin-top:8px">Make sure units are powered on and on the same network,<br>
+         or enter your subnet manually and tap <strong>Scan</strong>.</p>
       <p style="margin-top:10px;font-size:12px;color:var(--muted)">
         Android hotspot: <strong>192.168.43</strong><br>
         iPhone hotspot: <strong>172.20.10</strong><br>

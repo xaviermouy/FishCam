@@ -53,29 +53,35 @@ import config
 # M-sequence support
 # ---------------------------------------------------------------------------
 
-# Feedback tap positions (1-indexed, NOT including n) for primitive polynomials
-# over GF(2). Each entry generates a unique maximal-length binary sequence.
+# Feedback tap positions for Fibonacci LFSR over GF(2).
+#
+# Each entry lists ALL positions to XOR (1-indexed, where tap k → state[k-1]).
+# The feedback bit = XOR of state[tap-1] for every tap in the list.
+# This directly encodes the characteristic polynomial recurrence:
+#   a_{t+n} = XOR of a_{t+tap-1} for each tap
+#
+# Taps are derived from primitive polynomials, which guarantee maximal-length
+# sequences (period = 2^n - 1). All entries are validated at startup.
 #
 #   n=5  → sequence length 31 chips  (covers units 1–6)
 #   n=6  → sequence length 63 chips  (covers units 1–6)
 #
-# All entries are validated at startup by _validate_msequence_taps().
 _MSEQ_TAPS = {
     5: {
-        1: [2],        # x^5 + x^2 + 1
-        2: [3],        # x^5 + x^3 + 1
-        3: [3, 2, 1],  # x^5 + x^3 + x^2 + x + 1
-        4: [4, 2, 1],  # x^5 + x^4 + x^2 + x + 1
-        5: [4, 3, 1],  # x^5 + x^4 + x^3 + x + 1
-        6: [4, 3, 2],  # x^5 + x^4 + x^3 + x^2 + 1
+        1: [3, 1],        # x^5 + x^2 + 1
+        2: [4, 1],        # x^5 + x^3 + 1
+        3: [4, 3, 2, 1],  # x^5 + x^3 + x^2 + x + 1
+        4: [5, 3, 2, 1],  # x^5 + x^4 + x^2 + x + 1
+        5: [5, 4, 2, 1],  # x^5 + x^4 + x^3 + x + 1
+        6: [5, 4, 3, 1],  # x^5 + x^4 + x^3 + x^2 + 1
     },
     6: {
-        1: [1],        # x^6 + x + 1
-        2: [5, 2, 1],  # x^6 + x^5 + x^2 + x + 1
-        3: [5, 3, 2],  # x^6 + x^5 + x^3 + x^2 + 1
-        4: [5, 4, 1],  # x^6 + x^5 + x^4 + x + 1
-        5: [5, 4, 2],  # x^6 + x^5 + x^4 + x^2 + 1
-        6: [4, 2, 1],  # x^6 + x^4 + x^2 + x + 1
+        1: [6, 1],        # x^6 + x^5 + 1
+        2: [2, 1],        # x^6 + x + 1
+        3: [6, 3, 2, 1],  # x^6 + x^5 + x^2 + x + 1
+        4: [5, 3, 2, 1],  # x^6 + x^4 + x^2 + x + 1
+        5: [6, 5, 3, 1],  # x^6 + x^5 + x^4 + x^2 + 1
+        6: [6, 5, 2, 1],  # x^6 + x^5 + x^4 + x + 1
     },
 }
 
@@ -84,13 +90,14 @@ def _generate_msequence(n, taps):
     """Generate a binary m-sequence of length 2^n - 1 using a Fibonacci LFSR.
 
     The LFSR is initialised to all-ones. At each step the output bit is
-    state[0], the feedback is state[n-1] XOR state[tap-1] for each tap,
+    state[0], the feedback is XOR of state[tap-1] for every tap in the list,
     and the register shifts left with the feedback appended.
 
     Args:
         n:    Shift register length (degree of primitive polynomial).
-        taps: Intermediate feedback tap positions (1-indexed, not including n).
-              Example: x^6 + x + 1  →  n=6, taps=[1]
+        taps: ALL feedback tap positions (1-indexed). Must encode a primitive
+              polynomial. Example: x^6 + x + 1  →  n=6, taps=[2, 1]
+              (recurrence a_{t+6} = a_{t+1} + a_t)
 
     Returns:
         List of int (0 or 1) of length 2^n - 1.
@@ -105,7 +112,7 @@ def _generate_msequence(n, taps):
 
     for step in range(expected_len + 1):   # +1 to detect premature cycling
         out      = state[0]
-        feedback = state[n - 1]
+        feedback = 0
         for tap in taps:
             feedback ^= state[tap - 1]
         state = state[1:] + [feedback]

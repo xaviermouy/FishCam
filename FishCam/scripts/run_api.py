@@ -62,14 +62,6 @@ def _add_cors(response):
     return response
 
 
-@app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
-@app.route('/<path:path>', methods=['OPTIONS'])
-def handle_options(path):
-    """Respond to CORS preflight requests (Chrome sends OPTIONS before fetch)."""
-    response = app.response_class(status=204)
-    return _add_cors(response)
-
-
 app.after_request(_add_cors)
 
 
