@@ -92,10 +92,13 @@ buzzer:
     - "16:32"
     - "16:35"
     - "16:38"
-    - "16:40"
-    - "19:00"
-    - "19:30"
-    - "21:00"
+    - "18:00"
+    - "18:05"
+    - "18:10"
+    - "18:15"
+    - "18:20"
+    - "18:25"
+    - "18:30"
 
   beep_count: 4              # Beeps per sequence — set uniquely per fishcam unit
   beep_duration_sec: 0.1      # Duration of each beep in seconds
