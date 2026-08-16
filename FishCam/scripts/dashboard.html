@@ -781,6 +781,7 @@ function renderCard(ip, entry) {
     <div class="card ${online ? '' : 'offline'}" id="${cardId}">
       <div class="card-header">
         <span class="fishcam-id">${fishcamLabel}</span>
+        <span style="font-size:11px;color:var(--muted);font-family:monospace">${ip}</span>
         <div style="display:flex;align-items:center;gap:8px">
           ${lastUpdated}
           ${offlineBadge}
