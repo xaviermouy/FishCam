@@ -88,6 +88,16 @@ def dashboard():
     return send_file(str(html_path))
 
 
+@app.route('/ping')
+def ping():
+    """Lightweight liveness probe — returns immediately with no subprocess calls.
+
+    Used by the dashboard subnet scanner so the 254-host scan doesn't have to
+    wait for the slow /status data collection on each IP.
+    """
+    return jsonify({'fishcam_id': _fishcam_id})
+
+
 @app.route('/self')
 def self_info():
     """Return this unit's own LAN IP so the dashboard can derive the subnet."""

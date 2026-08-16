@@ -275,9 +275,10 @@
 // ── Configuration ────────────────────────────────────────────────────────────
 const API_PORT         = 5000;
 const REFRESH_INTERVAL = 15;    // seconds between auto-refreshes
-const SCAN_TIMEOUT_MS  = 5000;  // per-host timeout for subnet scan (Pi Zero 2W needs ~2s)
-const MDNS_TIMEOUT_MS  = 3000;  // per-host timeout for .local probes (mDNS needs more time)
-const MDNS_MAX_UNIT    = 20;    // probe fishcam01.local … fishcam20.local
+const SCAN_TIMEOUT_MS   = 2000;  // /ping timeout for subnet scan (fast — no subprocess calls)
+const STATUS_TIMEOUT_MS = 8000;  // /status timeout (Pi Zero 2W needs ~2–4s to collect data)
+const MDNS_TIMEOUT_MS   = 3000;  // per-host timeout for .local probes (mDNS needs more time)
+const MDNS_MAX_UNIT     = 20;    // probe fishcam01.local … fishcam20.local
 
 // ── State ────────────────────────────────────────────────────────────────────
 let discovered    = {};   // { host: { online, data, host } }  host = IP or hostname
@@ -288,20 +289,35 @@ let countdownTimer;
 let scanning      = false;
 
 // ── Generic host probe ────────────────────────────────────────────────────────
-// host can be an IP address or a hostname (e.g. fishcam01.local)
+// Hits /ping — returns immediately with no subprocess overhead.
+// Used for the 254-host subnet scan so it stays fast.
 async function probeHost(host, timeoutMs) {
-  const url  = `http://${host}:${API_PORT}/status`;
+  const url  = `http://${host}:${API_PORT}/ping`;
   const ctrl = new AbortController();
   const tid  = setTimeout(() => ctrl.abort(), timeoutMs || SCAN_TIMEOUT_MS);
   try {
     const resp = await fetch(url, { signal: ctrl.signal });
     clearTimeout(tid);
-    if (!resp.ok) return { online: false };
-    const data = await resp.json();
-    return { online: true, data, host };
+    return resp.ok ? { online: true, host } : { online: false };
   } catch {
     clearTimeout(tid);
     return { online: false };
+  }
+}
+
+// Fetch full status for a known-online host (slow — Pi needs time to collect data).
+async function fetchStatus(host) {
+  const url  = `http://${host}:${API_PORT}/status`;
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), STATUS_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(tid);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch {
+    clearTimeout(tid);
+    return null;
   }
 }
 
@@ -313,10 +329,13 @@ async function probeMdnsHosts() {
   for (let i = 1; i <= MDNS_MAX_UNIT; i++) {
     const host = `fishcam${String(i).padStart(2, '0')}.local`;
     probes.push(
-      probeHost(host, MDNS_TIMEOUT_MS).then(result => {
+      probeHost(host, MDNS_TIMEOUT_MS).then(async result => {
         if (result.online) {
-          discovered[host] = { online: true, data: result.data, host };
-          renderDiscovering(null, null);   // show units as they come in
+          discovered[host] = { online: true, data: null, host };
+          renderDiscovering(null, null);
+          const data = await fetchStatus(host);
+          discovered[host] = { online: !!data, data, host };
+          renderDiscovering(null, null);
         }
       })
     );
@@ -365,13 +384,16 @@ async function scanSubnet(prefix) {
   const total    = 254;
   renderDiscovering(0, total);
 
+  // Phase 1: fast /ping scan across all 254 hosts in parallel
+  const foundHosts = [];
   const probes = [];
   for (let i = 1; i <= 254; i++) {
     const host = `${prefix}.${i}`;
     const p = probeHost(host).then(result => {
       probesDone++;
       if (result.online) {
-        discovered[host] = { online: true, data: result.data, host };
+        foundHosts.push(host);
+        discovered[host] = { online: true, data: null, host };
         renderDiscovering(probesDone, total);
       } else if (probesDone % 25 === 0 || probesDone === total) {
         renderDiscovering(probesDone, total);
@@ -379,8 +401,14 @@ async function scanSubnet(prefix) {
     });
     probes.push(p);
   }
-
   await Promise.allSettled(probes);
+
+  // Phase 2: fetch full /status for each found host (slow but only runs once per unit)
+  await Promise.allSettled(foundHosts.map(async host => {
+    const data = await fetchStatus(host);
+    discovered[host] = { online: !!data, data, host };
+  }));
+
   scanning = false;
   render();
 }
@@ -389,7 +417,6 @@ async function scanSubnet(prefix) {
 async function refreshAll() {
   const hosts = Object.keys(discovered);
   if (hosts.length === 0) {
-    // No units known — re-run full discovery
     if (usingMdns) {
       await probeMdnsHosts();
       render();
@@ -398,12 +425,11 @@ async function refreshAll() {
     }
     return;
   }
-  // Re-probe each known host (works for both IPs and .local hostnames)
-  const timeout = usingMdns ? MDNS_TIMEOUT_MS : SCAN_TIMEOUT_MS;
+  // Re-fetch full status for each known host
   await Promise.allSettled(hosts.map(async host => {
-    const result = await probeHost(host, timeout);
-    if (result.online) {
-      discovered[host] = { online: true, data: result.data, host };
+    const data = await fetchStatus(host);
+    if (data) {
+      discovered[host] = { online: true, data, host };
     } else {
       discovered[host] = { online: false, data: discovered[host]?.data, host };
     }
@@ -490,6 +516,19 @@ function renderCard(ip, entry) {
   const cardId = 'card-' + ip.replace(/\./g, '-');
 
   if (!online && !d) return '';
+
+  // Found via ping but status not yet loaded
+  if (online && !d) {
+    return `
+      <div class="card" id="${cardId}">
+        <div class="card-header">
+          <span class="fishcam-id">${ip}</span>
+        </div>
+        <div class="card-body">
+          <div class="discovering-bar"><span class="spinner"></span> Loading status…</div>
+        </div>
+      </div>`;
+  }
 
   const offlineBadge = !online
     ? `<span class="offline-badge">Offline</span>`
