@@ -606,6 +606,47 @@ function renderCard(ip, entry) {
     const vidCount = st.video_count != null ? `${st.video_count} video files` : '';
     const imuCount = st.imu_count   != null ? ` / ${st.imu_count} IMU files`  : '';
 
+    // ── IMU READINGS ──
+    const imuR = d.imu_data;
+    let imuReadingsContent = '';
+    if (!imuR) {
+      imuReadingsContent = '<div class="row muted">No IMU data yet</div>';
+    } else {
+      const fmtDeg = v => v != null ? `${v.toFixed(1)}°` : '—';
+      const fmtVec = (vec, unit, dec) => vec
+        ? vec.map(v => v != null ? (v >= 0 ? '+' : '') + v.toFixed(dec) : '—').join('  ') + `  <span class="muted">${unit}</span>`
+        : '—';
+      const ageStr = imuR.age_s != null ? fmtAge(imuR.age_s) : '';
+      imuReadingsContent = `
+        <div class="row">
+          <span class="row-label">Heading</span>
+          <span class="row-value">${fmtDeg(imuR.heading)} <span class="muted" style="font-size:11px">${ageStr}</span></span>
+        </div>
+        <div class="row">
+          <span class="row-label">Pitch</span>
+          <span class="row-value">${fmtDeg(imuR.pitch)}</span>
+        </div>
+        <div class="row">
+          <span class="row-label">Roll</span>
+          <span class="row-value">${fmtDeg(imuR.roll)}</span>
+        </div>`;
+      if (imuR.accel) imuReadingsContent += `
+        <div class="row">
+          <span class="row-label">Accel</span>
+          <span class="row-value" style="font-family:monospace;font-size:12px">${fmtVec(imuR.accel, 'm/s²', 2)}</span>
+        </div>`;
+      if (imuR.gyro) imuReadingsContent += `
+        <div class="row">
+          <span class="row-label">Gyro</span>
+          <span class="row-value" style="font-family:monospace;font-size:12px">${fmtVec(imuR.gyro, 'rad/s', 3)}</span>
+        </div>`;
+      if (imuR.mag) imuReadingsContent += `
+        <div class="row">
+          <span class="row-label">Mag</span>
+          <span class="row-value" style="font-family:monospace;font-size:12px">${fmtVec(imuR.mag, 'µT', 1)}</span>
+        </div>`;
+    }
+
     // ── LOG ERRORS ──
     const errorLogs = (d.logs || []).filter(l => l.err_1h > 0);
     const errorRows = errorLogs.length === 0
@@ -649,6 +690,11 @@ function renderCard(ip, entry) {
             <span class="row-value ${vClass}">${vStr} <span class="muted" style="font-size:11px">${vThresh}</span></span>
           </div>
         </div>
+      </section>
+      <hr class="divider">
+      <section class="section">
+        <div class="section-label">IMU Readings</div>
+        <div class="section-rows">${imuReadingsContent}</div>
       </section>
       <hr class="divider">
       <section class="section">

@@ -318,6 +318,78 @@ def acquisition_status(paths, script_dir):
     return result
 
 
+# ── IMU latest reading ────────────────────────────────────────────────────────
+
+def imu_latest_reading(paths, script_dir):
+    """Return the most recent IMU sample from the latest CSV written by run_imu.py.
+
+    Reads only the header row and the last data row — no sensor hardware access.
+    Returns a dict with orientation, sensor vectors, and data age, or None if no
+    CSV exists yet or the file contains only a header.
+    """
+    imu_dir = script_dir / paths['imu_dir']
+    try:
+        candidates = list(Path(imu_dir).glob('*.csv'))
+        if not candidates:
+            return None
+        csv_path = max(candidates, key=lambda p: p.stat().st_mtime)
+    except Exception:
+        return None
+
+    try:
+        with open(csv_path, 'rb') as f:
+            header_line = f.readline().decode().strip()
+            if not header_line:
+                return None
+            try:
+                f.seek(-2, 2)
+            except OSError:
+                return None                      # file too small — header only
+            while f.read(1) != b'\n':
+                try:
+                    f.seek(-2, 1)
+                except OSError:
+                    return None
+            data_line = f.readline().decode().strip()
+        if not data_line:
+            return None
+    except Exception:
+        return None
+
+    cols = header_line.split(',')
+    vals = data_line.split(',')
+    row  = dict(zip(cols, vals))
+
+    def get(key):
+        try:
+            v = row.get(key, '').strip()
+            return float(v) if v else None
+        except (ValueError, AttributeError):
+            return None
+
+    try:
+        age_s = int(time.time() - csv_path.stat().st_mtime)
+    except Exception:
+        age_s = None
+
+    result = {
+        'age_s':   age_s,
+        'heading': get('heading_deg'),
+        'pitch':   get('pitch_deg'),
+        'roll':    get('roll_deg'),
+    }
+    for key, col_names in [
+        ('accel', ['accel_x_ms2',     'accel_y_ms2',     'accel_z_ms2']),
+        ('gyro',  ['gyro_x_rads',     'gyro_y_rads',     'gyro_z_rads']),
+        ('mag',   ['mag_x_uT',        'mag_y_uT',        'mag_z_uT']),
+        ('lin',   ['lin_accel_x_ms2', 'lin_accel_y_ms2', 'lin_accel_z_ms2']),
+        ('grav',  ['gravity_x_ms2',   'gravity_y_ms2',   'gravity_z_ms2']),
+    ]:
+        result[key] = [get(c) for c in col_names] if all(c in row for c in col_names) else None
+
+    return result
+
+
 # ── Data collection ───────────────────────────────────────────────────────────
 
 def collect(script_dir, fishcam_id, paths, imu_cfg, wittypi_cfg, buzzer_cfg):
@@ -401,5 +473,8 @@ def collect(script_dir, fishcam_id, paths, imu_cfg, wittypi_cfg, buzzer_cfg):
     # Buzzer schedule
     buzzer_log = log_dir / f'buzzer_{fishcam_id}.log'
     data['buzzer'] = get_buzzer_status(buzzer_cfg, buzzer_log)
+
+    # IMU latest reading (from CSV — no hardware access)
+    data['imu_data'] = imu_latest_reading(paths, script_dir)
 
     return data
