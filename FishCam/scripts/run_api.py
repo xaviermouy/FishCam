@@ -66,6 +66,19 @@ def _add_cors(response):
 app.after_request(_add_cors)
 
 
+@app.route('/<path:path>', methods=['OPTIONS'])
+def handle_options(path):
+    """Handle CORS preflight for all non-root endpoints.
+
+    Chrome sends an OPTIONS preflight before cross-origin GETs/POSTs when
+    Private Network Access (PNA) is involved (e.g. page at fishcam02.local
+    fetching from 172.16.x.x).  The response must include
+    Access-Control-Allow-Private-Network: true, added by _add_cors().
+    Using /<path:path> (requires ≥1 char) avoids conflicting with GET /.
+    """
+    return _add_cors(app.response_class(status=204))
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route('/')
