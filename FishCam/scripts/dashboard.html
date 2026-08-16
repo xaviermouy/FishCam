@@ -791,29 +791,35 @@ async function quickProbe(prefix) {
 }
 
 (async function init() {
-  // 1. Try mDNS first — probe fishcamXX.local names in parallel.
-  //    Works without knowing the subnet; relies on OS mDNS (Avahi / Bonjour).
   document.getElementById('countdown').textContent = 'Detecting…';
-  document.getElementById('grid').innerHTML = `
-    <div class="empty-state">
-      <div class="spinner"></div>
-      <p style="margin-top:12px">Scanning for FishCam units via mDNS (fishcamXX.local)…</p>
-    </div>`;
 
-  const mdnsFound = await probeMdnsHosts();
-  if (mdnsFound) {
-    usingMdns = true;
-    document.getElementById('subnet-status').textContent = '(via mDNS)';
-    render();
-    startCountdown();
-    return;
+  // 1. If served from a Pi (http://fishcamXX.local:5000/), call /self to get
+  //    the Pi's LAN IP — same-origin fetch, always works, no CORS/mDNS needed.
+  //    Browsers block .local resolution inside fetch(), so we use IPs instead.
+  if (/fishcam/i.test(window.location.hostname)) {
+    document.getElementById('grid').innerHTML = `
+      <div class="empty-state">
+        <div class="spinner"></div>
+        <p style="margin-top:12px">Detecting subnet from serving unit…</p>
+      </div>`;
+    try {
+      const selfResp = await fetch('/self');
+      if (selfResp.ok) {
+        const self = await selfResp.json();
+        const prefix = self.ip.split('.').slice(0, 3).join('.');
+        document.getElementById('subnet-status').textContent = `(${self.ip})`;
+        await scanSubnet(prefix);
+        startCountdown();
+        return;
+      }
+    } catch {}
   }
 
-  // 2. mDNS found nothing — try WebRTC subnet auto-detection
+  // 2. Fallback: try WebRTC subnet auto-detection (works when not served from Pi)
   document.getElementById('grid').innerHTML = `
     <div class="empty-state">
       <div class="spinner"></div>
-      <p style="margin-top:12px">No units found via mDNS — detecting subnet…</p>
+      <p style="margin-top:12px">Detecting subnet…</p>
     </div>`;
 
   const detected = await getLocalIPPrefix();

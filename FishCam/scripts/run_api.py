@@ -20,6 +20,7 @@ Usage:
 # pip install flask
 from flask import Flask, jsonify, send_file, request
 
+import socket
 from pathlib import Path
 
 import config
@@ -72,6 +73,20 @@ def dashboard():
     """Serve the static dashboard HTML file."""
     html_path = _script_dir / 'dashboard.html'
     return send_file(str(html_path))
+
+
+@app.route('/self')
+def self_info():
+    """Return this unit's own LAN IP so the dashboard can derive the subnet."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('10.255.255.255', 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return jsonify({'ip': ip, 'fishcam_id': _fishcam_id})
 
 
 @app.route('/status')
