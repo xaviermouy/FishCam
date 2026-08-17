@@ -66,7 +66,7 @@ def main():
     print('  This script prepares the FishCam for a new deployment.')
     print('  Each step will ask for confirmation before making changes.')
 
-    TOTAL_STEPS = 8
+    TOTAL_STEPS = 9
 
     # ── Step 1: Confirm fishcam identity ─────────────────────────────────────
     step(1, TOTAL_STEPS, 'Confirm FishCam identity')
@@ -155,8 +155,27 @@ def main():
             print('  Edit buzzer settings in fishcam_config.yaml and re-run.')
             sys.exit(0)
 
-    # ── Step 4: Configure WittyPi ─────────────────────────────────────────────
-    step(4, TOTAL_STEPS, 'Configure WittyPi')
+    # ── Step 4: IMU calibration (optional) ───────────────────────────────────
+    step(4, TOTAL_STEPS, 'IMU calibration (optional)')
+    print('  Checking current IMU calibration status...')
+    print()
+    run_step(['python3', 'calibrate_imu.py', '--check'])
+    print()
+    answer = ask('Run IMU calibration now?', valid=('y', 'n'), default='n')
+    if answer == 'y':
+        rc = run_step(['python3', 'calibrate_imu.py'])
+        if rc != 0:
+            answer = ask('Calibration exited with an error. Continue anyway?',
+                         valid=('y', 'n'), default='n')
+            if answer != 'y':
+                print('  Aborting.')
+                sys.exit(1)
+    else:
+        print()
+        print('  Skipped.')
+
+    # ── Step 5: Configure WittyPi ─────────────────────────────────────────────
+    step(5, TOTAL_STEPS, 'Configure WittyPi')
     print('  Running configure_wittypi.py ...')
     print()
     rc = run_step(['python3', 'configure_wittypi.py'])
@@ -174,8 +193,8 @@ def main():
     print('  This is expected — it means WittyPi has no schedule to act on and will')
     print('  leave the Pi running continuously. It is NOT an error.')
 
-    # ── Step 5: Delete recorded data ──────────────────────────────────────────
-    step(5, TOTAL_STEPS, 'Delete all recorded data')
+    # ── Step 6: Delete recorded data ──────────────────────────────────────────
+    step(6, TOTAL_STEPS, 'Delete all recorded data')
     print('  Running delete_data.py ...')
     print()
     rc = run_step(['python3', 'delete_data.py'])
@@ -187,8 +206,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 6: Clear WittyPi logs ────────────────────────────────────────────
-    step(6, TOTAL_STEPS, 'Clear WittyPi logs')
+    # ── Step 7: Clear WittyPi logs ────────────────────────────────────────────
+    step(7, TOTAL_STEPS, 'Clear WittyPi logs')
     print('  Running clear_wittypi_logs.sh ...')
     print()
     rc = run_step(['bash', 'clear_wittypi_logs.sh'])
@@ -200,8 +219,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 7: Clear system journal ─────────────────────────────────────────
-    step(7, TOTAL_STEPS, 'Clear system journal')
+    # ── Step 8: Clear system journal ─────────────────────────────────────────
+    step(8, TOTAL_STEPS, 'Clear system journal')
     print('  Running clear_system_logs.sh ...')
     print()
     rc = run_step(['bash', 'clear_system_logs.sh'])
@@ -213,8 +232,8 @@ def main():
             print('  Aborting.')
             sys.exit(1)
 
-    # ── Step 8: Reboot ───────────────────────────────────────────────────────
-    step(8, TOTAL_STEPS, 'Reboot')
+    # ── Step 9: Reboot ───────────────────────────────────────────────────────
+    step(9, TOTAL_STEPS, 'Reboot')
     print('  A reboot is recommended to:')
     print('    - Test the full startup sequence (cron, fishcamStartup.sh)')
     print('    - Apply the WittyPi schedule from cold')
