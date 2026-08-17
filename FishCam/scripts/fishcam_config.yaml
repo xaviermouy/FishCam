@@ -78,27 +78,11 @@ buzzer:
 
   # Times of day to trigger sequences (24-hour HH:MM format - in local/deployment time zone)
   trigger_times:
-    - "10:00"
-    - "12:00"
-    - "14:00"
-    - "15:40"
-    - "15:45"
-    - "15:50"
-    - "16:00"
-    - "16:05"
-    - "16:10"
-    - "16:15"
-    - "16:30"
-    - "16:32"
-    - "16:35"
-    - "16:38"
-    - "18:00"
-    - "18:05"
-    - "18:10"
-    - "18:15"
-    - "18:20"
-    - "18:25"
-    - "18:30"
+    - "19:20"
+    - "19:40"
+    - "19:50"
+    - "20:00"
+    - "20:20"
 
   beep_count: 4              # Beeps per sequence — set uniquely per fishcam unit
   beep_duration_sec: 0.1      # Duration of each beep in seconds

@@ -372,11 +372,15 @@ def imu_latest_reading(paths, script_dir):
     except Exception:
         age_s = None
 
+    cal_raw = row.get('calibration_status', '').strip()
+    cal = int(cal_raw) if cal_raw.isdigit() else None
+
     result = {
-        'age_s':   age_s,
-        'heading': get('heading_deg'),
-        'pitch':   get('pitch_deg'),
-        'roll':    get('roll_deg'),
+        'age_s':               age_s,
+        'heading':             get('heading_deg'),
+        'pitch':               get('pitch_deg'),
+        'roll':                get('roll_deg'),
+        'calibration_status':  cal,
     }
     for key, col_names in [
         ('accel', ['accel_x_ms2',     'accel_y_ms2',     'accel_z_ms2']),

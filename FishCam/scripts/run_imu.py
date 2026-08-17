@@ -19,6 +19,7 @@ Output CSV columns (enabled reports only):
 - gyro_{x,y,z}_rads  : Gyroscope (rad/s)
 - mag_{x,y,z}_uT     : Magnetometer (µT)
 - quat_{i,j,k,real}  : Rotation vector (quaternion, dimensionless)
+- calibration_status  : BNO085 orientation accuracy (0=unreliable … 3=high)
 - heading_deg         : Yaw / heading referenced to magnetic north (0–360°)
 - pitch_deg           : Pitch angle (degrees)
 - roll_deg            : Roll angle (degrees)
@@ -186,6 +187,7 @@ class IMUAcquisition:
             cols += ['mag_x_uT', 'mag_y_uT', 'mag_z_uT']
         if self.enable_rot:
             cols += ['quat_i', 'quat_j', 'quat_k', 'quat_real',
+                     'calibration_status',
                      'heading_deg', 'pitch_deg', 'roll_deg']
         if self.enable_lin_accel:
             cols += ['lin_accel_x_ms2', 'lin_accel_y_ms2', 'lin_accel_z_ms2']
@@ -236,6 +238,8 @@ class IMUAcquisition:
             row['quat_j']    = self._fmt(j)
             row['quat_k']    = self._fmt(k)
             row['quat_real'] = self._fmt(r)
+            cal = self._imu.calibration_status  # 0–3 or None
+            row['calibration_status'] = str(cal) if cal is not None else ''
             if all(v is not None for v in (i, j, k, r)):
                 heading, pitch, roll = quat_to_euler(i, j, k, r)
                 row['heading_deg'] = self._fmt(heading)

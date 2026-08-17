@@ -165,11 +165,15 @@ def read_csv_sample(imu_dir):
     grav  = (get('gravity_x_ms2'), get('gravity_y_ms2'), get('gravity_z_ms2')) \
             if 'gravity_x_ms2' in row else None
 
+    cal_raw = row.get('calibration_status', '').strip()
+    cal = int(cal_raw) if cal_raw.isdigit() else None
+
     return {
         'source': 'recording',
         'accel': accel, 'gyro': gyro, 'mag': mag,
         'quat': quat, 'yaw': yaw, 'pitch': pitch, 'roll': roll,
         'lin': lin, 'grav': grav,
+        'calibration_status': cal,
     }
 
 
@@ -220,11 +224,17 @@ def read_sensor_sample(imu, imu_cfg):
         if all(v is not None for v in (qi, qj, qk, qr)):
             yaw, pitch, roll = quat_to_euler(qi, qj, qk, qr)
 
+    try:
+        cal = imu.calibration_status if imu_cfg['rotation_vector'] else None
+    except Exception:
+        cal = None
+
     return {
         'source': 'sensor',
         'accel': accel, 'gyro': gyro, 'mag': mag,
         'quat': quat,   'yaw': yaw,   'pitch': pitch, 'roll': roll,
         'lin': lin,     'grav': grav,
+        'calibration_status': cal,
     }
 
 
@@ -260,6 +270,7 @@ def draw(stdscr, data, imu_cfg, start_time, sample_count, actual_hz):
     yaw   = data.get('yaw')
     pitch = data.get('pitch')
     roll  = data.get('roll')
+    cal   = data.get('calibration_status')
 
     elapsed = time.monotonic() - start_time
     h = int(elapsed // 3600)
@@ -275,11 +286,14 @@ def draw(stdscr, data, imu_cfg, start_time, sample_count, actual_hz):
     put(r, '═' * W); r += 1
 
     if imu_cfg['rotation_vector']:
+        _CAL_LABELS = {0: '0 - unreliable', 1: '1 - low', 2: '2 - medium', 3: '3 - high'}
+        cal_str = _CAL_LABELS.get(cal, '---') if cal is not None else '---'
         r += 1
         put(r, '  Orientation', bold=True); r += 1
         put(r, f'    Heading (mag N) : {fmt_angle(yaw):>8}°'); r += 1
         put(r, f'    Pitch           : {fmt_angle(pitch):>8}°'); r += 1
         put(r, f'    Roll            : {fmt_angle(roll):>8}°'); r += 1
+        put(r, f'    Calibration     : {cal_str}'); r += 1
 
     if imu_cfg['accelerometer']:
         ax, ay, az = accel if accel is not None else (None, None, None)

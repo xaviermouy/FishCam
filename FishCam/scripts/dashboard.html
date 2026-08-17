@@ -656,6 +656,11 @@ function renderCard(ip, entry) {
         ? vec.map(v => v != null ? (v >= 0 ? '+' : '') + v.toFixed(dec) : '—').join('  ') + `  <span class="muted">${unit}</span>`
         : '—';
       const ageStr = imuR.age_s != null ? fmtAge(imuR.age_s) : '';
+      const calLabels = ['0 – unreliable', '1 – low', '2 – medium', '3 – high'];
+      const calStr = imuR.calibration_status != null ? calLabels[imuR.calibration_status] ?? '—' : '—';
+      const calColor = imuR.calibration_status === 3 ? 'var(--ok)'
+                     : imuR.calibration_status === 2 ? 'var(--warn)'
+                     : imuR.calibration_status != null ? 'var(--err)' : 'var(--muted)';
       imuReadingsContent = `
         <div class="row">
           <span class="row-label">Heading</span>
@@ -668,6 +673,10 @@ function renderCard(ip, entry) {
         <div class="row">
           <span class="row-label">Roll</span>
           <span class="row-value">${fmtDeg(imuR.roll)}</span>
+        </div>
+        <div class="row">
+          <span class="row-label">Cal. accuracy</span>
+          <span class="row-value" style="color:${calColor}">${calStr}</span>
         </div>`;
       if (imuR.accel) imuReadingsContent += `
         <div class="row">
