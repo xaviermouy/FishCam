@@ -191,7 +191,8 @@ def check_mode(imu_cfg, paths):
 
 # ── Full calibration mode ──────────────────────────────────────────────────────
 
-def _draw(stdscr, mag_cal, rot_cal, mag_min, mag_max, visited_octants, fishcam_id, elapsed_s, saved=False, hold_remaining=None):
+def _draw(stdscr, mag_cal, rot_cal, mag_live, mag_min, mag_max, visited_octants,
+          fishcam_id, elapsed_s, sample_count, saved=False, hold_remaining=None):
     stdscr.erase()
     max_rows, max_cols = stdscr.getmaxyx()
     W = max_cols
@@ -223,6 +224,15 @@ def _draw(stdscr, mag_cal, rot_cal, mag_min, mag_max, visited_octants, fishcam_i
     put(r, '  Sensor accuracy  (auto-saves after 5s at magnetometer ≥ 2 – medium)', bold=True); r += 1
     put(r, f'    Magnetometer      : {mag_cal_str}'); r += 1
     put(r, f'    Game rotation vec : {rot_cal_str}'); r += 1
+
+    # ── Live magnetometer readings ────────────────────────────────────────────
+    r += 1
+    put(r, '  Live magnetometer readings  (should change as you rotate)', bold=True); r += 1
+    if mag_live is not None and any(v is not None for v in mag_live):
+        mx, my, mz = [(f'{v:+.2f}' if v is not None else '  ---') for v in mag_live]
+        put(r, f'    X: {mx} µT   Y: {my} µT   Z: {mz} µT   samples: {sample_count}'); r += 1
+    else:
+        put(r, f'    --- no data ---   samples: {sample_count}'); r += 1
 
     # ── Magnetometer coverage ─────────────────────────────────────────────────
     r += 1
@@ -290,11 +300,13 @@ def run_calibration(stdscr, imu, fishcam_id):
 
     mag_min           = [None, None, None]
     mag_max           = [None, None, None]
+    mag_live          = None
     visited_octants   = set()
     start_time        = time.monotonic()
     saved             = False    # ensure save_calibration_data() runs exactly once
     good_since        = None     # monotonic timestamp when cal first reached >= 2
     _SAVE_HOLD_S      = 5.0      # seconds cal must stay >= 2 before auto-saving
+    sample_count      = 0
 
     while True:
         loop_start = time.monotonic()
@@ -310,9 +322,13 @@ def run_calibration(stdscr, imu, fishcam_id):
             _       = imu.game_quaternion      # must be read to trigger rotation accuracy update
             rot_cal = imu.calibration_status   # accuracy of the game rotation vector report
             cal     = mag_cal                  # save logic driven by magnetometer (hardest sensor)
+            sample_count += 1
         except Exception:
             mag = grav = None
             mag_cal = rot_cal = cal = None
+
+        # Keep live reading for display (even if None — shows no-data state)
+        mag_live = mag
 
         # Accumulate mag range
         if mag is not None:
@@ -343,8 +359,8 @@ def run_calibration(stdscr, imu, fishcam_id):
                 pass  # non-fatal — calibration is still valid in RAM
 
         hold_remaining = max(0.0, _SAVE_HOLD_S - (now - good_since)) if good_since else None
-        _draw(stdscr, mag_cal, rot_cal, mag_min, mag_max, visited_octants,
-              fishcam_id, now - start_time, saved, hold_remaining)
+        _draw(stdscr, mag_cal, rot_cal, mag_live, mag_min, mag_max, visited_octants,
+              fishcam_id, now - start_time, sample_count, saved, hold_remaining)
 
         remaining = 0.1 - (time.monotonic() - loop_start)
         if remaining > 0:
