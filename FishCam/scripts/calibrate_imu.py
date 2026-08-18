@@ -26,9 +26,9 @@ import config
 import board
 import busio
 from adafruit_bno08x import (
+    BNO_REPORT_GAME_ROTATION_VECTOR,
     BNO_REPORT_GRAVITY,
     BNO_REPORT_MAGNETOMETER,
-    BNO_REPORT_ROTATION_VECTOR,
 )
 from adafruit_bno08x.i2c import BNO08X_I2C
 
@@ -100,15 +100,40 @@ def _read_cal_from_csv(imu_dir):
 
 # ── IMU setup ──────────────────────────────────────────────────────────────────
 
+def _open_imu(imu_cfg):
+    """Open I2C and return (imu, i2c) without entering calibration mode.
+
+    Used by --check mode so we read current NVRAM state without disturbing it.
+    Uses GAME_ROTATION_VECTOR + MAGNETOMETER — the same pair the Adafruit
+    calibration example uses, which is what drives calibration_status updates.
+    """
+    interval_us = 100_000   # 10 Hz — sufficient for a one-shot status read
+    i2c = busio.I2C(board.SCL, board.SDA)
+    imu = BNO08X_I2C(i2c, address=imu_cfg['i2c_address'])
+    imu.enable_feature(BNO_REPORT_MAGNETOMETER,        report_interval=interval_us)
+    imu.enable_feature(BNO_REPORT_GAME_ROTATION_VECTOR, report_interval=interval_us)
+    imu.enable_feature(BNO_REPORT_GRAVITY,              report_interval=interval_us)
+    return imu, i2c
+
+
 def setup_imu(imu_cfg):
-    """Initialise I2C and BNO085 with mag, rotation vector, and gravity reports."""
-    rate_hz    = max(imu_cfg.get('sample_rate_hz', 10), 10)
+    """Initialise I2C and BNO085 for active calibration.
+
+    Critical ordering (matches the official Adafruit calibration example):
+      1. begin_calibration() — must come BEFORE enable_feature() calls so the
+         BNO085 enters calibration mode before reports are activated.
+      2. enable GAME_ROTATION_VECTOR (not ROTATION_VECTOR) — calibration_status
+         is updated as a side effect of reading game_quaternion, not quaternion.
+      3. enable MAGNETOMETER and GRAVITY for coverage tracking.
+    """
+    rate_hz     = max(imu_cfg.get('sample_rate_hz', 10), 10)
     interval_us = int(1_000_000 / rate_hz)
     i2c = busio.I2C(board.SCL, board.SDA)
     imu = BNO08X_I2C(i2c, address=imu_cfg['i2c_address'])
-    imu.enable_feature(BNO_REPORT_MAGNETOMETER,    report_interval=interval_us)
-    imu.enable_feature(BNO_REPORT_ROTATION_VECTOR, report_interval=interval_us)
-    imu.enable_feature(BNO_REPORT_GRAVITY,         report_interval=interval_us)
+    imu.begin_calibration()                                                      # must be first
+    imu.enable_feature(BNO_REPORT_MAGNETOMETER,         report_interval=interval_us)
+    imu.enable_feature(BNO_REPORT_GAME_ROTATION_VECTOR, report_interval=interval_us)
+    imu.enable_feature(BNO_REPORT_GRAVITY,              report_interval=interval_us)
     return imu, i2c
 
 
@@ -142,10 +167,12 @@ def check_mode(imu_cfg, paths):
     source = 'last CSV'
 
     if cal is None and not is_run_imu_active():
-        # No CSV and no recording process — read sensor directly
+        # No CSV and no recording process — read sensor directly.
+        # Use _open_imu (no begin_calibration) so we read the NVRAM state as-is.
         try:
-            imu, i2c = setup_imu(imu_cfg)
+            imu, i2c = _open_imu(imu_cfg)
             time.sleep(0.5)
+            _ = imu.game_quaternion   # trigger calibration_status update
             cal    = imu.calibration_status
             age_s  = 0
             source = 'sensor'
@@ -164,7 +191,7 @@ def check_mode(imu_cfg, paths):
 
 # ── Full calibration mode ──────────────────────────────────────────────────────
 
-def _draw(stdscr, cal, mag_min, mag_max, visited_octants, fishcam_id, elapsed_s):
+def _draw(stdscr, mag_cal, rot_cal, mag_min, mag_max, visited_octants, fishcam_id, elapsed_s, saved=False, hold_remaining=None):
     stdscr.erase()
     max_rows, max_cols = stdscr.getmaxyx()
     W = max_cols
@@ -181,7 +208,11 @@ def _draw(stdscr, cal, mag_min, mag_max, visited_octants, fishcam_id, elapsed_s)
     m = int((elapsed_s % 3600) // 60)
     s = int(elapsed_s % 60)
 
-    cal_label = f'{cal} – {_CAL_LABELS.get(cal, "?")}' if cal is not None else '---'
+    def _cal_str(v):
+        return f'{v} – {_CAL_LABELS.get(v, "?")}' if v is not None else '---'
+
+    mag_cal_str = _cal_str(mag_cal)
+    rot_cal_str = _cal_str(rot_cal)
 
     r = 0
     put(r, '═' * W); r += 1
@@ -189,7 +220,9 @@ def _draw(stdscr, cal, mag_min, mag_max, visited_octants, fishcam_id, elapsed_s)
     put(r, '═' * W); r += 1
 
     r += 1
-    put(r, f'  Overall accuracy  :  {cal_label}     (target: 3 – high)', bold=True); r += 1
+    put(r, '  Sensor accuracy  (auto-saves after 5s at magnetometer ≥ 2 – medium)', bold=True); r += 1
+    put(r, f'    Magnetometer      : {mag_cal_str}'); r += 1
+    put(r, f'    Game rotation vec : {rot_cal_str}'); r += 1
 
     # ── Magnetometer coverage ─────────────────────────────────────────────────
     r += 1
@@ -237,8 +270,15 @@ def _draw(stdscr, cal, mag_min, mag_max, visited_octants, fishcam_id, elapsed_s)
 
     r += 1
     put(r, '─' * W); r += 1
-    done = '  ★ Calibration complete! ' if cal == 3 else ''
-    put(r, f'  Elapsed: {h:02d}:{m:02d}:{s:02d}  |  Accuracy: {cal_label}  |  {done}Press q to exit'); r += 1
+    if saved:
+        done = '  ★ Saved to NVRAM — calibration complete! '
+    elif hold_remaining is not None and hold_remaining > 0:
+        done = f'  Holding steady — saving in {hold_remaining:.1f}s... '
+    elif hold_remaining is not None:
+        done = '  Saving to NVRAM... '
+    else:
+        done = ''
+    put(r, f'  Elapsed: {h:02d}:{m:02d}:{s:02d}  |  Mag: {mag_cal_str}  |  Rot: {rot_cal_str}  |  {done}Press q to exit'); r += 1
     put(r, '═' * W)
 
     stdscr.refresh()
@@ -248,10 +288,13 @@ def run_calibration(stdscr, imu, fishcam_id):
     curses.curs_set(0)
     stdscr.nodelay(True)
 
-    mag_min        = [None, None, None]
-    mag_max        = [None, None, None]
-    visited_octants = set()
-    start_time     = time.monotonic()
+    mag_min           = [None, None, None]
+    mag_max           = [None, None, None]
+    visited_octants   = set()
+    start_time        = time.monotonic()
+    saved             = False    # ensure save_calibration_data() runs exactly once
+    good_since        = None     # monotonic timestamp when cal first reached >= 2
+    _SAVE_HOLD_S      = 5.0      # seconds cal must stay >= 2 before auto-saving
 
     while True:
         loop_start = time.monotonic()
@@ -261,11 +304,15 @@ def run_calibration(stdscr, imu, fishcam_id):
             break
 
         try:
-            mag  = imu.magnetic
-            grav = imu.gravity
-            cal  = imu.calibration_status
+            mag     = imu.magnetic
+            mag_cal = imu.calibration_status   # accuracy of the magnetometer report
+            grav    = imu.gravity
+            _       = imu.game_quaternion      # must be read to trigger rotation accuracy update
+            rot_cal = imu.calibration_status   # accuracy of the game rotation vector report
+            cal     = mag_cal                  # save logic driven by magnetometer (hardest sensor)
         except Exception:
-            mag = grav = cal = None
+            mag = grav = None
+            mag_cal = rot_cal = cal = None
 
         # Accumulate mag range
         if mag is not None:
@@ -279,8 +326,25 @@ def run_calibration(stdscr, imu, fishcam_id):
         if oct_idx is not None:
             visited_octants.add(oct_idx)
 
-        _draw(stdscr, cal, mag_min, mag_max, visited_octants,
-              fishcam_id, time.monotonic() - start_time)
+        # Track how long calibration has been >= 2 (medium or high)
+        now = time.monotonic()
+        if cal is not None and cal >= 2:
+            if good_since is None:
+                good_since = now
+        else:
+            good_since = None   # reset if it drops back
+
+        # Save to BNO085 NVRAM after _SAVE_HOLD_S seconds at >= 2
+        if not saved and good_since is not None and (now - good_since) >= _SAVE_HOLD_S:
+            try:
+                imu.save_calibration_data()
+                saved = True
+            except Exception:
+                pass  # non-fatal — calibration is still valid in RAM
+
+        hold_remaining = max(0.0, _SAVE_HOLD_S - (now - good_since)) if good_since else None
+        _draw(stdscr, mag_cal, rot_cal, mag_min, mag_max, visited_octants,
+              fishcam_id, now - start_time, saved, hold_remaining)
 
         remaining = 0.1 - (time.monotonic() - loop_start)
         if remaining > 0:
