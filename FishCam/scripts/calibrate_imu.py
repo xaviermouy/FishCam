@@ -37,9 +37,10 @@ SCRIPT_DIR = Path(__file__).parent
 
 _CAL_LABELS = {0: 'unreliable', 1: 'low', 2: 'medium', 3: 'high'}
 
-# Span (µT) considered full-bar coverage — Earth's field is ~25–65 µT total,
-# so a well-rotated unit should achieve ~2× that on each axis.
-_MAG_TARGET_UT = 120.0
+# Span (µT) considered full-bar coverage.
+# Earth's field magnitude is ~40–65 µT; a well-rotated unit achieves roughly
+# 1.5–2× that as span per axis.  80 µT is a realistic full-bar target.
+_MAG_TARGET_UT = 80.0
 
 # Octant definitions: 8 combinations of gravity-vector signs (+X/−X, +Y/−Y, +Z/−Z)
 _OCTANT_LABELS = [

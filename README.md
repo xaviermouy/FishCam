@@ -2,40 +2,105 @@
 
 ## Overview
 
-FishCam is an autonomous underwater video recording system designed for long-term deployment in marine environments. This repository contains an **updated version** of the original FishCam design with support for newer Raspberry Pi libraries (Picamera2) and hardware.
+FishCam is an autonomous underwater video recording system designed for long-term deployment in marine environments. It runs on a Raspberry Pi Zero 2W and captures video, IMU orientation data, and acoustic buzzer sequences for multi-unit synchronization.
 
 **Original FishCam code**: https://github.com/xaviermouy/fishcam_2020_paper
 
 ---
 
+## Repository Layout
+
+```
+FishCam/
+  scripts/               # All deployable scripts (run from this directory)
+    utils/               # Post-processing and diagnostic utilities
+    fishcam_config.yaml  # Master configuration file
+    fishcamStartup.sh    # Boot-time startup orchestration
+  wittypi_schedules/     # WittyPi on/off schedule files (.wpi)
+  POWER_SAVING_SETUP.md  # Power saving hardware setup guide
+  fishcam_setup_steps.txt # Complete setup checklist
+```
+
+At runtime, data is written relative to the scripts directory:
+```
+../data/video/   # H.264 / MJPEG video files + per-video _metadata.json
+../data/logs/    # Timestamped .log files, power_saving.log, imu_acquisition.log
+../data/imu/     # BNO085 IMU CSV files
+```
+
+---
+
 ## Scripts
 
-### Main Scripts
+### Core Acquisition
 
-- **`captureVideo.py`** - Main video capture script. Runs continuously, capturing videos and optionally triggering the buzzer based on `iteration_period`.
+| Script | Description |
+|--------|-------------|
+| **`run_video.py`** | Main video capture. Records continuously, producing H.264/MJPEG clips with per-frame metadata JSON files. Includes retry logic for transient camera errors. |
+| **`run_imu.py`** | Reads Adafruit BNO085 IMU over I2C. Writes CSV rows (quaternion, Euler angles, accel, gyro, mag). Flushes every 50 samples. Auto-recovers from I2C crashes. |
+| **`run_buzzer.py`** | Acoustic sequence controller. Fires at configured trigger times daily. Supports m-sequence (LFSR-based, recommended) and legacy beep modes. |
+| **`run_power_manager.py`** | Monitors reed switch to toggle between power-saving and configuration modes. Controls WiFi, Bluetooth, HDMI, CPU frequency, services. |
+| **`run_network.py`** | Connects to WiFi at boot via nmcli. Skipped when power saving mode manages WiFi state. |
+| **`run_api.py`** | Flask HTTP API serving system status and the web dashboard on port 5000. |
 
-- **`runBuzzer.py`** - Buzzer control script. Plays beep sequences according to configuration. Can be run standalone or called by `captureVideo.py`.
+### Startup
 
-- **`visualize_buzzer_sequences.py`** - Visualization tool to preview buzzer sequences before deployment. Shows timeline of when each fishcam beeps to verify no overlaps.
+| Script | Description |
+|--------|-------------|
+| **`fishcamStartup.sh`** | Boot-time orchestration (via cron). Syncs RTC, creates directories, connects WiFi, then starts background processes (power manager, IMU, buzzer, API) and video capture in foreground. |
+
+### Setup and Deployment
+
+| Script | Description |
+|--------|-------------|
+| **`start_new_deployment.py`** | Interactive 9-step pre-deployment wizard: verify identity, timezone, buzzer schedule, IMU calibration, WittyPi config, clear data/logs, optional reboot. |
+| **`configure_wittypi.py`** | WittyPi setup: RTC sync, power schedule, voltage protection, daily on/off windows. |
+| **`sync_rtc.py`** | Boot-time RTC sync from NTP (called by fishcamStartup.sh). |
+| **`delete_data.py`** | Safe data deletion with confirmation prompt. |
+| **`verify_fishcam.sh`** | System verification and auto-fix: packages, cron, repo, permissions, hostname, I2C. |
+| **`updateFishCamRepo.sh`** | Fetches and resets to origin/main. |
+| **`clear_system_logs.sh`** | Clears systemd journal (pre-deployment). |
+| **`clear_wittypi_logs.sh`** | Clears WittyPi logs (pre-deployment). |
+
+### Monitoring and Diagnostics
+
+| Script | Description |
+|--------|-------------|
+| **`monitor_system.py`** | Real-time curses dashboard: process status, log tails, hardware health, storage, buzzer schedule. |
+| **`monitor_imu.py`** | Real-time IMU data display: orientation, accel, gyro, mag, calibration status. |
+| **`calibrate_imu.py`** | Interactive IMU calibration with magnetometer coverage tracking. Auto-saves to BNO085 NVRAM. |
+| **`dashboard.html`** | Web-based monitoring interface. Auto-discovers all fishcams on the network (fishcam01..20.local). |
+| **`system_status.py`** | Shared status collection module used by both the CLI monitor and the web API. |
 
 ### Utility Modules
 
-- **`config.py`** - Configuration management module. Loads and provides access to settings from `fishcam_config.yaml`.
+| Script | Description |
+|--------|-------------|
+| **`config.py`** | Configuration singleton. Loads `fishcam_config.yaml`. FishCam ID derived from hostname. |
+| **`buzzer_utils.py`** | Shared buzzer timing helpers (trigger parsing, schedule display). No hardware dependencies. |
+| **`wittypi_utils.py`** | WittyPi hardware interface: RTC sync, WiFi/NTP checks, voltage reading. |
 
-- **`buzzer_utils.py`** - Shared buzzer calculation utilities used by both `runBuzzer.py` and `visualize_buzzer_sequences.py`.
+### Post-Processing Utilities (`utils/`)
+
+| Script | Description |
+|--------|-------------|
+| **`convertH264toMP4.py`** | Convert H.264 video files to MP4. |
+| **`convertH264toMP4_ffmpeg.py`** | Convert H.264 to MP4 using ffmpeg. |
+| **`parse_camera_logs.py`** | Extract frame statistics, dropped frames, and buzzer events from logs. |
+| **`parse_wittypi_log.py`** | Parse WittyPi log files. |
+| **`check_power_status.sh`** | Report current power saving status. |
 
 ---
 
 ## Configuration File: `fishcam_config.yaml`
 
-### FishCam Settings
+### Deployment Timezone
 
 ```yaml
-fishcam:
-  id: "fishcam01"
+deployment_timezone: "America/New_York"
 ```
 
-- **`id`**: Unique identifier for this FishCam unit. In auto mode, the numeric portion determines beep pattern (e.g., "fishcam01" → 1).
+The Pi always runs in UTC. This timezone is used to interpret all local times in the config (WittyPi deployment window, daily schedule, buzzer trigger times). Must be a valid IANA timezone name.
 
 ---
 
@@ -43,14 +108,14 @@ fishcam:
 
 ```yaml
 video:
-  duration: 300
-  resolution: [1600, 1200]
+  duration: 900
+  resolution: [1920, 1080]
   frameRate: 10
   quality: 'medium'
   format: 'h264'
 ```
 
-- **`duration`**: Duration of each video file in seconds.
+- **`duration`**: Duration of each video clip in seconds.
 - **`resolution`**: Video resolution `[width, height]` in pixels.
 - **`frameRate`**: Frame rate in frames per second.
 - **`quality`**: Encoding quality. Options: `'very_low'`, `'low'`, `'medium'`, `'high'`, `'very_high'`.
@@ -62,37 +127,44 @@ video:
 
 ```yaml
 camera:
-  # Image Quality
   sharpness: 1.0
   contrast: 1.0
   brightness: 0.0
   saturation: 1.0
-
-  # Gain and Exposure
   AnalogueGain: 8.0
   AeEnable: true
   AeExposureMode: 0
-
-  # White Balance
   AwbEnable: true
   AwbMode: 0
-
-  # Image Orientation
   vflip: false
   hflip: false
 ```
 
-- **`sharpness`**: Sharpness level (0.0 to 16.0).
-- **`contrast`**: Contrast level (0.0 to 32.0).
-- **`brightness`**: Brightness level (-1.0 to 1.0).
-- **`saturation`**: Saturation level (0.0 to 32.0).
-- **`AnalogueGain`**: Analogue gain (1.0 to 16.0, replaces ISO).
-- **`AeEnable`**: Auto exposure enable (true/false).
-- **`AeExposureMode`**: Auto exposure mode (0=Normal, 1=Short, 2=Long, 3=Custom).
-- **`AwbEnable`**: Auto white balance enable (true/false).
-- **`AwbMode`**: White balance mode (0=Auto, 1=Tungsten, 2=Fluorescent, 3=Indoor, 4=Daylight, 5=Cloudy, 6=Custom).
-- **`vflip`**: Vertical flip (true/false).
-- **`hflip`**: Horizontal flip (true/false).
+- **`sharpness`**: 0.0 to 16.0 (default: 1.0).
+- **`contrast`**: 0.0 to 32.0 (default: 1.0).
+- **`brightness`**: -1.0 to 1.0 (default: 0.0).
+- **`saturation`**: 0.0 to 32.0 (default: 1.0).
+- **`AnalogueGain`**: Analogue gain, 1.0 to 16.0 (replaces ISO).
+- **`AeEnable`**: Auto exposure (true/false).
+- **`AeExposureMode`**: 0=Normal, 1=Short, 2=Long, 3=Custom.
+- **`AwbEnable`**: Auto white balance (true/false).
+- **`AwbMode`**: 0=Auto, 1=Tungsten, 2=Fluorescent, 3=Indoor, 4=Daylight, 5=Cloudy, 6=Custom.
+- **`vflip`** / **`hflip`**: Vertical/horizontal flip (true/false).
+
+---
+
+### Network Settings
+
+```yaml
+network:
+  wifi_auto_connect: true
+  wifi_ssid: "FishcamNetwork"
+  wifi_password: "your_password"
+```
+
+- **`wifi_auto_connect`**: Automatically connect to WiFi on boot / when entering config mode.
+- **`wifi_ssid`**: WiFi network name.
+- **`wifi_password`**: WiFi password (stored in plaintext -- avoid committing real credentials).
 
 ---
 
@@ -102,50 +174,54 @@ camera:
 buzzer:
   enabled: true
   pin: 26
-  mode: 'auto'
-  iteration_period: -1
+  sequence_mode: 'msequence'
 
-  # Common settings
-  beep_duration_sec: 0.05
+  # M-sequence parameters
+  msequence_n: 6
+  chip_duration_sec: 0.1
+
+  # Legacy beep parameters
+  beep_count: 4
+  beep_duration_sec: 0.1
   beep_gap_sec: 0.1
+
+  # Schedule
+  trigger_times:
+    - "00:00"
+    - "06:00"
+    - "12:00"
+    - "18:00"
+
   number_sequences: 5
-
-  # Manual mode settings
-  manual:
-    beep_number: 2
-    gap_between_sequences_sec: 5
-    initial_delay_sec: 0
-
-  # Auto mode settings
-  auto:
-    total_fishcams: 6
-    base_beeps: 10
-    safety_buffer_sec: 2
+  gap_between_sequences_sec: 5
+  missed_trigger_grace_sec: 60
 ```
 
-#### Common Settings
+- **`enabled`**: Enable/disable buzzer (true/false).
+- **`pin`**: GPIO pin for buzzer (BCM numbering).
+- **`sequence_mode`**: `'msequence'` (recommended) or `'beep'` (legacy).
 
-- **`enabled`**: Enable/disable buzzer functionality (true/false).
-- **`pin`**: GPIO pin number for buzzer (BCM numbering).
-- **`mode`**: Buzzer mode. Options: `'auto'` (sequential beeping for multi-fishcam deployments) or `'manual'` (custom configuration).
-- **`iteration_period`**: How often buzzer runs during video capture. `-1` = once at startup only, `N` = every Nth video.
-- **`beep_duration_sec`**: Duration of each individual beep in seconds.
-- **`beep_gap_sec`**: Gap between beeps within a sequence in seconds.
-- **`number_sequences`**: Number of times to repeat the full beep sequence.
+#### M-Sequence Mode (`sequence_mode: 'msequence'`)
 
-#### Manual Mode Settings (`mode: 'manual'`)
+Each unit plays a unique maximal-length LFSR sequence derived automatically from the unit number in the hostname (e.g., fishcam02 -> unit 2). Provides excellent autocorrelation properties for TDOA cross-correlation. No per-unit config edit needed.
 
-- **`beep_number`**: Number of beeps per sequence.
-- **`gap_between_sequences_sec`**: Gap between sequence repetitions in seconds.
-- **`initial_delay_sec`**: Initial delay before starting beeping in seconds (0 = no delay).
+- **`msequence_n`**: LFSR shift register length. Sequence length = 2^n - 1. n=5 -> 31 chips, n=6 -> 63 chips.
+- **`chip_duration_sec`**: Duration of each chip (on or off) in seconds.
 
-#### Auto Mode Settings (`mode: 'auto'`)
+#### Legacy Beep Mode (`sequence_mode: 'beep'`)
 
-- **`total_fishcams`**: Total number of fishcams being deployed together.
-- **`base_beeps`**: Base number of beeps. Each fishcam gets `base_beeps + fishcam_number` beeps (e.g., FishCam 1 gets 11 beeps if `base_beeps: 10`).
-- **`safety_buffer_sec`**: Safety buffer in seconds added to initial delays to account for clock drift between units.
+Each unit plays a fixed number of beeps. Requires `beep_count` set uniquely per unit.
 
-**Auto mode behavior**: Fishcams beep sequentially (one after another) with automatically calculated delays to prevent overlap. Each fishcam has a unique number of beeps for identification.
+- **`beep_count`**: Number of beeps per sequence (must be unique per fishcam).
+- **`beep_duration_sec`**: Duration of each beep in seconds.
+- **`beep_gap_sec`**: Silence between beeps within a sequence.
+
+#### Scheduling
+
+- **`trigger_times`**: List of HH:MM times (local/deployment timezone) when the buzzer fires each day.
+- **`number_sequences`**: Number of sequence repetitions per trigger.
+- **`gap_between_sequences_sec`**: Gap between sequence repetitions.
+- **`missed_trigger_grace_sec`**: Fire a late trigger if it was scheduled within this many seconds ago (0 = disabled).
 
 ---
 
@@ -153,64 +229,109 @@ buzzer:
 
 ```yaml
 power_saving:
-  enabled: false
-  reed_switch_pin: 18
+  enabled: true
+  reed_switch_pin: 24
   led_pin: 23
   check_interval: 2.0
+  cpu_freq_power_saving: 800
+  cpu_freq_config: 1000
 
-  # Audio feedback when in configuration mode
-  beep_in_config_mode: false
-  beep_interval: 10.0
-  beep_duration: 0.1
-
-  # Component-specific power saving controls
   components:
     disable_wifi: true
     disable_bluetooth: true
-    disable_hdmi: true
-    disable_usb: true
+    disable_hdmi: false
+    disable_usb: false
     throttle_cpu: true
     stop_services: true
-    disable_led_triggers: true
+    disable_led_triggers: false
 ```
 
-#### Main Settings
+- **`enabled`**: Enable/disable power saving mode (requires reed switch hardware).
+- **`reed_switch_pin`**: GPIO pin for reed switch (BCM numbering).
+- **`led_pin`**: GPIO pin for status LED (BCM numbering).
+- **`check_interval`**: How often to check reed switch state (seconds).
+- **`cpu_freq_power_saving`** / **`cpu_freq_config`**: CPU frequency in MHz for each mode (Pi Zero 2W range: 600-1000 MHz).
 
-- **`enabled`**: Enable/disable power saving mode (true/false). Requires reed switch hardware. Set to false for FishCams without reed switch.
-- **`reed_switch_pin`**: GPIO pin number for reed switch (BCM numbering). Default: 18 (Pin 12, right side of Pi).
-- **`led_pin`**: GPIO pin number for status LED (BCM numbering). Default: 23 (Pin 16, right side of Pi).
-- **`check_interval`**: How often to check reed switch state in seconds. Default: 2.0 seconds.
+**Component controls** -- each can be individually toggled:
 
-#### Audio Feedback Settings
+| Component | Savings | Description |
+|-----------|---------|-------------|
+| `disable_wifi` | ~40-50 mA | Disable WiFi via nmcli |
+| `disable_bluetooth` | ~10-15 mA | Disable Bluetooth |
+| `disable_hdmi` | ~20-30 mA | Disable HDMI output |
+| `disable_usb` | ~20-30 mA | USB autosuspend |
+| `throttle_cpu` | ~50-100 mA | Throttle CPU frequency |
+| `stop_services` | ~10-20 mA | Stop non-essential services |
+| `disable_led_triggers` | minimal | Disable activity LED triggers |
 
-- **`beep_in_config_mode`**: Enable/disable periodic beeps when magnet is near (configuration mode). Default: false.
-- **`beep_interval`**: Interval between beeps in seconds when in configuration mode. Default: 10.0 seconds.
-- **`beep_duration`**: Duration of each beep in seconds. Default: 0.1 seconds.
+See [POWER_SAVING_SETUP.md](FishCam/POWER_SAVING_SETUP.md) for hardware wiring and setup.
 
-**Note**: Buzzer beep feature requires buzzer hardware to be enabled in `buzzer` settings. The buzzer GPIO pin is taken from the `buzzer.pin` setting.
+---
 
-#### Component-Specific Power Saving Controls
+### IMU Settings
 
-Each power saving feature can be individually enabled or disabled. Set to `true` to enable power saving for that component, `false` to keep it always on.
-
-- **`disable_wifi`**: Disable WiFi in power saving mode. Saves ~40-50 mA. Default: true.
-- **`disable_bluetooth`**: Disable Bluetooth in power saving mode. Saves ~10-15 mA. Default: true.
-- **`disable_hdmi`**: Disable HDMI output in power saving mode. Saves ~20-30 mA. Default: true.
-- **`disable_usb`**: Enable USB autosuspend in power saving mode. Saves ~20-30 mA. Default: true (safe for most Pi camera modules).
-- **`throttle_cpu`**: Throttle CPU frequency (1000 MHz → 600 MHz) in power saving mode. Saves ~50-100 mA. Default: true.
-- **`stop_services`**: Stop non-essential services in power saving mode. Saves ~10-20 mA. Default: true.
-- **`disable_led_triggers`**: Disable activity LED triggers in power saving mode. Minimal savings. Default: true.
-
-**Example - WiFi always on (for SSH access during deployment):**
 ```yaml
-components:
-  disable_wifi: false  # Keep WiFi on even in power saving mode
-  disable_bluetooth: true
-  disable_hdmi: true
-  # ... other settings
+imu:
+  enabled: true
+  i2c_address: 0x4A
+  sample_rate_hz: 1
+
+  reports:
+    accelerometer: false
+    gyroscope: false
+    magnetometer: false
+    rotation_vector: true
+    linear_acceleration: false
+    gravity: false
 ```
 
-**See [POWER_SAVING_SETUP.md](POWER_SAVING_SETUP.md) for complete hardware setup and usage instructions.**
+- **`enabled`**: Enable/disable IMU acquisition.
+- **`i2c_address`**: I2C address (0x4A default, 0x4B if ADDR pin is high).
+- **`sample_rate_hz`**: Sampling rate in Hz (1-50 Hz, BNO085 hardware limited).
+- **`reports`**: Enable/disable individual sensor reports. Disabling unused ones reduces file size (~47 MB/hour at 50 Hz with all enabled).
+
+**Wiring**: VIN -> 3.3V (Pin 1), GND -> GND (Pin 6), SDA -> GPIO2 (Pin 3), SCL -> GPIO3 (Pin 5).
+
+---
+
+### WittyPi Settings
+
+```yaml
+wittypi:
+  install_dir: '/home/fishcam/Desktop/wittypi'
+  i2c_address: 0x08
+  power_cut_delay_sec: 60
+  low_voltage_cutoff_v: 0
+  recovery_voltage_v: 0
+  voltage_log_interval_min: 10
+  auto_sync_rtc_from_internet: true
+  auto_sync_rtc_from_gps: false
+  rtc_sync_min_interval_min: 15
+
+  deployment:
+    start: "2026-08-01 06:00:00"
+    end:   "2026-09-30 23:59:59"
+
+  daily_schedule:
+    anchor_time: "06:00"
+    windows:
+      - name: "daytime"
+        duration_hours: 14
+        on_min: 15
+        off_min: 45
+      - name: "nighttime"
+        duration_hours: 10
+        on_min: 5
+        off_min: 115
+```
+
+- **`power_cut_delay_sec`**: Seconds WittyPi waits after SIGTERM before hard power cut. Must allow clean shutdown (~15s) + margin.
+- **`low_voltage_cutoff_v`** / **`recovery_voltage_v`**: Battery voltage protection thresholds (set both to 0 to disable).
+- **`voltage_log_interval_min`**: How often to log input voltage to CSV.
+- **`auto_sync_rtc_from_internet`**: Sync RTC from NTP at boot if WiFi is up.
+- **`rtc_sync_min_interval_min`**: Minimum minutes between RTC syncs (prevents excessive I2C writes).
+- **`deployment`**: Start and end dates (local timezone) for the deployment window.
+- **`daily_schedule`**: Daily on/off cycling. Windows must sum to 24 hours. `anchor_time` is the local time where the sequence restarts each day.
 
 ---
 
@@ -218,180 +339,105 @@ components:
 
 ```yaml
 paths:
-  output_dir: '../data'
-  log_dir: '../logs'
-  iterator_file: 'iterator.config'
-  config_file: 'fishcam_config.yaml'
+  video_dir: '../data/video'
+  log_dir: '../data/logs'
+  imu_dir: '../data/imu'
+  gps_dir: '../data/gps'
 ```
 
-- **`output_dir`**: Directory for video files.
-- **`log_dir`**: Directory for log files.
-- **`iterator_file`**: Filename for iteration counter.
-- **`config_file`**: Name of this configuration file.
+### API Settings
+
+```yaml
+api:
+  port: 5000
+```
 
 ---
 
 ## Quick Start
 
-1. **Install dependencies**:
+1. **Install dependencies** (on the Pi):
    ```bash
-   pip install pyyaml picamera2 lgpio matplotlib numpy
+   sudo apt install python3 cron git
+   pip install pyyaml picamera2 lgpio flask
+   pip install adafruit-blinka adafruit-circuitpython-bno08x
    ```
 
 2. **Edit configuration**: Modify `fishcam_config.yaml` with your settings.
 
-3. **Test buzzer configuration** (optional but recommended):
+3. **Run the system**:
    ```bash
-   python visualize_buzzer_sequences.py
+   cd /home/fishcam/Desktop/FishCam/FishCam/scripts
+   python run_video.py
    ```
 
-4. **Run the system**:
+4. **Or run the full startup** (all subsystems):
    ```bash
-   python captureVideo.py
+   sh fishcamStartup.sh
    ```
 
 ---
 
-## Usage Examples
+## Monitoring
 
-### Visualize Buzzer Sequences
-
-```bash
-# Use settings from fishcam_config.yaml
-python visualize_buzzer_sequences.py
-
-# Save visualization to file
-python visualize_buzzer_sequences.py --output timeline.png
-
-# Limit display duration to 60 seconds
-python visualize_buzzer_sequences.py --duration 60
-```
-
-### Run Buzzer Standalone
+### CLI System Monitor
 
 ```bash
-python runBuzzer.py
+python monitor_system.py
+# Press r to refresh, q to quit
 ```
+
+Shows process status, log tails, hardware health (camera, I2C, voltage, CPU), storage, and buzzer schedule.
+
+### CLI IMU Monitor
+
+```bash
+python monitor_imu.py
+# Press q to quit
+```
+
+Live orientation, accelerometer, gyroscope, magnetometer readings. Safe to run anytime -- reads from I2C directly or from the live CSV when `run_imu.py` is active.
+
+### Web Dashboard
+
+Open `dashboard.html` in a browser while on the same WiFi network. Auto-discovers all fishcams (fishcam01..20.local) and displays processes, acquisition status, hardware, and logs.
+
+Each fishcam runs a local API on port 5000 (started automatically on boot). Access a single unit at: `http://fishcam01.local:5000/`
+
+### Verify Setup
+
+```bash
+bash verify_fishcam.sh
+```
+
+Auto-fixes missing packages, cron job, outdated repo, permissions. Reports hostname format, I2C config, SSH status, filesystem expansion.
 
 ---
 
 ## Output Data
 
-FishCam generates three types of output files during operation:
-
-### Log Files
-
-**Location**: `../logs/` (configured in `paths.log_dir`)
-
-#### Main Video Capture Log
-
-**Naming**: `YYYYMMDDTHHMMSS.log` (e.g., `20250102T143052.log`)
-
-**Contents**:
-- Video acquisition start/stop events
-- Video filenames and settings
-- Buzzer operation events (when enabled)
-- Frame statistics (expected vs actual frames, dropped frames, sequence gaps)
-- Warnings for significant frame loss (>5% dropped)
-- Error messages and exceptions
-
-**Example log entries**:
-```
-2025-01-02 14:30:52,123 INFO Video acquisition started
-2025-01-02 14:30:52,125 INFO FishCam ID: fishcam01
-2025-01-02 14:30:54,200 INFO Buzzer turned ON
-2025-01-02 14:35:52,456 INFO Frame metadata saved: 1_fishcam01_20250102T143052.123456Z_1600x1200_metadata.json
-2025-01-02 14:35:52,457 INFO Frame stats: Expected=3000, Actual=2998, Dropped=2, Sequence_gaps=1
-```
-
-#### Power Saving Mode Log
-
-**Naming**: `power_saving.log`
-
-**Contents** (when power saving mode is enabled):
-- Power saving controller startup/shutdown
-- Mode transitions (power saving ↔ configuration)
-- Reed switch state changes
-- GPIO initialization and configuration
-- WiFi/Bluetooth enable/disable operations
-- CPU frequency changes
-- Service start/stop operations
-- Buzzer beep events (when `beep_in_config_mode` enabled)
-- Error messages and warnings
-
-**Example log entries**:
-```
-2025-01-02 14:30:45,000 INFO ============================================================
-2025-01-02 14:30:45,001 INFO FishCam Power Saving Mode Controller
-2025-01-02 14:30:45,002 INFO ============================================================
-2025-01-02 14:30:45,010 INFO Power saving mode is ENABLED
-2025-01-02 14:30:45,011 INFO Reed switch on GPIO 18
-2025-01-02 14:30:45,012 INFO Status LED on GPIO 23
-2025-01-02 14:30:45,013 INFO Config mode beeping ENABLED (interval: 10.0s, duration: 0.1s)
-2025-01-02 14:30:45,020 INFO GPIO initialized: Reed switch on GPIO18, LED on GPIO23, Buzzer on GPIO26
-2025-01-02 14:30:45,025 INFO Reed switch not activated - entering power saving mode
-2025-01-02 14:30:45,030 INFO Entering power saving mode...
-2025-01-02 14:30:45,035 INFO Disabling WiFi...
-2025-01-02 14:30:45,250 INFO Disabling Bluetooth...
-2025-01-02 14:30:45,450 INFO Power saving mode activated
-2025-01-02 14:45:12,100 INFO Magnet detected - switching to config mode
-2025-01-02 14:45:12,105 INFO Entering configuration mode...
-2025-01-02 14:45:12,110 INFO Enabling WiFi...
-2025-01-02 14:45:12,350 INFO Configuration mode activated
-```
-
-#### Power Saving Startup Log
-
-**Naming**: `power_saving_startup.log`
-
-**Contents**: Startup output from power saving controller when launched by `camStartup.sh`. Useful for debugging boot issues.
-
 ### Video Files
 
-**Location**: `../data/[iteration_number]/` (configured in `paths.output_dir`)
+**Location**: `../data/video/`
 
 **Naming Convention**:
 ```
-[iteration]_[fishcam_id]_[timestamp]_[width]x[height]_awbm-[awb_mode]_aem-[ae_mode]_fr-[framerate]_q-[quality]_sh-[sharpness]_b-[brightness]_c-[contrast]_ag-[analogue_gain]_sat-[saturation].[format]
+[iteration]_[hostname]_[timestamp]_[width]x[height]_awbm-[awb]_aem-[ae]_fr-[fps]_q-[quality]_sh-[sharp]_b-[bright]_c-[contrast]_ag-[gain]_sat-[sat].[format]
 ```
 
-**Example**: `1_fishcam01_20250102T143052.123456Z_1600x1200_awbm-0_aem-0_fr-10_q-medium_sh-1.0_b-0.0_c-1.0_ag-8.0_sat-1.0.h264`
-
-**Format**: H.264 (`.h264`) or Motion JPEG (`.mjpeg`) based on `video.format` setting
-
-**Settings Encoded in Filename**:
-- `awbm`: Auto White Balance Mode
-- `aem`: Auto Exposure Mode
-- `fr`: Frame rate (fps)
-- `q`: Quality level
-- `sh`: Sharpness
-- `b`: Brightness
-- `c`: Contrast
-- `ag`: Analogue Gain
-- `sat`: Saturation
+**Example**: `1_fishcam01_20250102T143052.123456Z_1920x1080_awbm-0_aem-0_fr-10_q-medium_sh-1.0_b-0.0_c-1.0_ag-8.0_sat-1.0.h264`
 
 ### Frame Metadata Files (JSON)
 
-**Location**: Same directory as video files
+Written alongside each video file with `_metadata.json` suffix.
 
-**Naming**: Same as video file but with `_metadata.json` suffix
-
-**Example**: `1_fishcam01_20250102T143052.123456Z_1600x1200_awbm-0_aem-0_fr-10_q-medium_sh-1.0_b-0.0_c-1.0_ag-8.0_sat-1.0_metadata.json`
-
-**Purpose**:
-- Accurate frame-level timestamps for each captured frame
-- Detection and quantification of dropped frames
-- Synchronization across multiple FishCam units
-- Post-processing and frame extraction
-
-**JSON Structure**:
 ```json
 {
-  "video_file": "1_fishcam01_20250102T143052.123456Z_1600x1200_..._metadata.json",
+  "video_file": "...",
   "start_time": "2025-01-02T14:30:52.123456",
   "duration_sec": 300,
   "expected_frame_rate": 10,
-  "resolution": [1600, 1200],
+  "resolution": [1920, 1080],
   "total_frames": 2998,
   "frames": [
     {
@@ -401,146 +447,32 @@ FishCam generates three types of output files during operation:
       "datetime": "2025-01-02T14:30:52.123456+0000",
       "exposure_time": 33000,
       "analogue_gain": 8.0
-    },
-    ...
+    }
   ]
 }
 ```
 
-**Frame Metadata Fields**:
-- `frame_sequence`: Hardware frame sequence number (gaps indicate dropped frames)
-- `sensor_timestamp_us`: Hardware timestamp from camera sensor (microseconds)
-- `system_time`: Unix timestamp (seconds since epoch)
-- `datetime`: Human-readable timestamp with timezone (ISO 8601 format)
-- `exposure_time`: Exposure time in microseconds
-- `analogue_gain`: Analogue gain value used for this frame
+- **`frame_sequence`**: Hardware frame sequence number (gaps = dropped frames).
+- **`sensor_timestamp_us`**: Hardware timestamp from camera sensor (microseconds).
+- **`system_time`**: Unix timestamp (seconds since epoch).
+- **`datetime`**: ISO 8601 timestamp with timezone.
 
-**Use Cases**:
-- **Dropped Frame Detection**: Compare `expected_frame_rate × duration_sec` with `total_frames`
-- **Accurate Timing**: Use `sensor_timestamp_us` for precise frame timing
-- **Multi-Camera Sync**: Use `datetime` to synchronize footage across multiple FishCams
-- **Frame Extraction**: Use `frame_sequence` to extract specific frames from video
+### IMU Data Files (CSV)
 
----
+**Location**: `../data/imu/`
 
-## Power Saving and Battery Life Optimization
+CSV rows with timestamp, quaternion (i, j, k, real), Euler angles (heading, pitch, roll), and enabled sensor reports. Written at the configured sample rate.
 
-FishCam supports an optional power saving mode for extended underwater deployments. Proper hardware selection and configuration can extend battery life by 40-60%.
+### Log Files
 
-### Power Saving Mode
+**Location**: `../data/logs/`
 
-**Optional reed switch-controlled power management** - See [POWER_SAVING_SETUP.md](POWER_SAVING_SETUP.md) for detailed setup.
-
-**Features:**
-- WiFi/Bluetooth disabled during deployment
-- HDMI output disabled
-- CPU frequency throttled (1000 MHz → 600 MHz)
-- USB autosuspend enabled (optional)
-- Non-essential services stopped
-
-**Control:**
-- Reed switch + magnet: Toggle between deployment and configuration modes
-- Status LED: Visual indication (optional)
-- Buzzer beep: Audio feedback in config mode (optional)
-
-**Power Savings:**
-
-| Component | Power Saving Mode | Normal Mode | Savings |
-|-----------|------------------|-------------|---------|
-| WiFi | Disabled | Enabled | ~40-50 mA |
-| Bluetooth | Disabled | Enabled | ~10-15 mA |
-| HDMI | Disabled | Enabled | ~20-30 mA |
-| CPU (throttled) | 600 MHz | 1000 MHz | ~50-100 mA |
-| USB (optional) | Autosuspend | Always On | ~20-30 mA |
-| Services | Stopped | Running | ~10-20 mA |
-| **Total Savings** | | | **~150-245 mA** |
-
-**Battery Life Impact:**
-- Typical video recording: ~250-300 mA
-- With power saving: ~100-150 mA reduction
-- **Result: 40-60% longer deployment time**
-
-### MicroSD Card Selection (Critical for Power Consumption)
-
-**MicroSD card choice significantly impacts power consumption and reliability.**
-
-#### Recommended: SanDisk High Endurance
-
-**Why SanDisk High Endurance:**
-- **Optimized for continuous recording** (designed for dashcams/security cameras)
-- **Lower power consumption** (~50-100 mA vs ~150-200 mA for standard cards)
-- **Better write endurance** (up to 10,000 hours continuous recording)
-- **More consistent performance** (reduces CPU overhead from waiting on slow writes)
-- **Temperature rated** (-25°C to 85°C - suitable for underwater deployments)
-
-**Power Impact Example:**
-- Standard microSD: ~150-200 mA during writes
-- High Endurance: ~50-100 mA during writes
-- **Savings: ~50-100 mA** (significant for battery-powered deployments)
-
-**Recommended Sizes:**
-- 64 GB: ~7 hours at 1600×1200, 10 fps, H.264 medium quality
-- 128 GB: ~14 hours
-- 256 GB: ~28 hours
-
-#### Alternative: Industrial MicroSD Cards
-
-**Industrial-grade cards** (e.g., SanDisk Industrial, Samsung Industrial):
-- **Pros**: Higher endurance, wider temperature range, better reliability
-- **Cons**: 2-3× more expensive than High Endurance
-- **When to use**: Critical deployments, extreme environments, multi-week missions
-
-**Avoid:**
-- ❌ Standard consumer microSD cards (high power, low endurance)
-- ❌ Ultra-high-speed cards (UHS-II/UHS-III) - unnecessary speed, higher power
-- ❌ Unknown/cheap brands - unreliable performance and power characteristics
-
-### Total Power Consumption Estimates
-
-**Typical FishCam Power Budget:**
-
-| Configuration | Power Draw | Example Battery Life* |
-|--------------|------------|---------------------|
-| **Video only (no power saving)** | ~300-350 mA | 10,000 mAh → ~28 hours |
-| **Video + High Endurance card** | ~250-300 mA | 10,000 mAh → ~33 hours |
-| **Video + Power Saving + High Endurance** | ~150-200 mA | 10,000 mAh → ~50-66 hours |
-| **Optimized (all features)** | ~100-150 mA | 10,000 mAh → ~66-100 hours |
-
-*Battery life estimates assume 10,000 mAh battery pack with 80% usable capacity. Actual runtime varies with resolution, framerate, and environmental conditions.
-
-### Power Optimization Checklist
-
-For maximum deployment duration:
-
-- [ ] Use **SanDisk High Endurance** microSD card (or industrial grade)
-- [ ] Enable **power saving mode** with reed switch (see [POWER_SAVING_SETUP.md](POWER_SAVING_SETUP.md))
-- [ ] Set appropriate **video resolution** (1600×1200 recommended for Pi Zero 2W)
-- [ ] Use **H.264 encoding** (more efficient than MJPEG)
-- [ ] Set **quality: 'medium'** or 'low' (reduces encoding CPU load)
-- [ ] Disable **WiFi/Bluetooth** during deployment (power saving mode does this automatically)
-- [ ] Use **high-capacity battery** (10,000+ mAh recommended)
-- [ ] Ensure **good SD card** (Class 10 or UHS-I minimum for High Endurance)
-
-**See [POWER_SAVING_SETUP.md](POWER_SAVING_SETUP.md) for complete power saving mode setup instructions.**
-
----
-
-## Multi-FishCam Deployment
-
-For deploying multiple fishcams, use `mode: 'auto'`:
-
-1. Set the same configuration on all units:
-   ```yaml
-   buzzer:
-     mode: 'auto'
-     auto:
-       total_fishcams: 6
-       base_beeps: 10
-   ```
-
-2. Change only the `fishcam.id` on each unit: `fishcam01`, `fishcam02`, `fishcam03`, etc.
-
-3. All fishcams will automatically beep sequentially with unique patterns (11, 12, 13... beeps).
+| Log File | Contents |
+|----------|----------|
+| `YYYYMMDDTHHMMSS.log` | Video capture events, frame statistics, buzzer events |
+| `power_saving.log` | Power mode transitions, WiFi/BT/CPU changes, reed switch state |
+| `imu_acquisition.log` | IMU start/stop, I2C errors, recovery attempts |
+| `buzzer.log` | Trigger events, sequence timing, missed triggers |
 
 ---
 
@@ -548,122 +480,137 @@ For deploying multiple fishcams, use `mode: 'auto'`:
 
 **Default credentials:**
 - Username: `fishcam`
-- Hostname: `fishcam0x` (replace x with the fishcam number)
+- Hostname: `fishcam0x` (replace x with the unit number)
+
+**Important**: The FishCam ID is derived from the hostname at runtime, not from the config file. Always set the hostname correctly.
 
 ### One-Time Setup (Skip if using FishCam SD-card image)
 
-These steps are already done when using the FishCam SD-card image:
+1. **Install required software:**
+   ```bash
+   sudo apt update && sudo apt upgrade
+   sudo apt install python3 cron git
+   pip install flask
+   pip install adafruit-blinka adafruit-circuitpython-bno08x
+   ```
 
-- [ ] **Turn off Bluetooth** (to save power)
+2. **Download repository:**
+   ```bash
+   cd /home/fishcam/Desktop/
+   git clone https://github.com/xaviermouy/FishCam.git
+   ```
 
-- [ ] **Install required software:**
-  ```bash
-  sudo apt update
-  sudo apt upgrade
-  sudo apt install python3
-  sudo apt install cron
-  sudo apt install git
-  ```
+3. **Configure Raspberry Pi** (via raspi-config):
+   - Interfaces: Enable SSH, Enable I2C
+   - Localization: Set timezone to UTC
+   - System: Boot to CLI, change hostname, splash screen off
+   - Advanced Options: Persistent logging
 
-- [ ] **Download GitHub repository:**
-  ```bash
-  cd /home/fishcam/Desktop/
-  git clone https://github.com/xaviermouy/FishCam.git
-  ```
+4. **Set up IMU (BNO085)**:
+   - Lower I2C baud rate to 100 kHz in `/boot/firmware/config.txt`:
+     ```
+     dtparam=i2c_arm=on,i2c_arm_baudrate=100000
+     ```
+   - Verify: `sudo i2cdetect -y 1` (should show 0x4A)
 
-- [ ] **Configure system settings:**
-  - Open control center
-  - Interfaces → Enable SSH
-  - Localization → Set timezone to UTC
-  - System → Boot to CLI
-  - System → Change hostname to `fishcam01`
-  - System → Splash screen off
+5. **Setup cron job for auto-start:**
+   ```bash
+   crontab -e
+   # Add: @reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcamStartup.sh &
+   ```
 
-- [ ] **Setup cron job for auto-start:**
-  ```bash
-  crontab -e
-  # Add this line:
-  @reboot sh /home/fishcam/Desktop/FishCam/FishCam/scripts/camStartup.sh &
-  ```
-  - Save: `Ctrl+O`, then `Enter`
-  - Exit: `Ctrl+X`
-  - Verify: `sudo crontab -l`
+6. **Fix folder ownership:**
+   ```bash
+   sudo chown -R fishcam:fishcam /home/fishcam/Desktop/FishCam/
+   ```
 
-- [ ] **Mark fishcam number on SD card** (with permanent marker)
+See [fishcam_setup_steps.txt](FishCam/fishcam_setup_steps.txt) for the complete checklist.
 
 ---
 
 ### Per-FishCam Setup (Required for each unit)
 
-Complete these steps for **every FishCam**, even when using the FishCam SD-card image:
+1. **Update the repo**: `bash updateFishCamRepo.sh`
 
-- [ ] **Install WittyPi (v4 mini):**
-  ```bash
-  cd /home/fishcam/Desktop
-  wget http://www.uugear.com/repo/WittyPi4/install.sh
-  sudo sh install.sh
-  ```
+2. **Install WittyPi (v4 mini):**
+   ```bash
+   cd /home/fishcam/Desktop
+   wget http://www.uugear.com/repo/WittyPi4/install.sh
+   sudo sh install.sh
+   sudo usermod -aG i2c fishcam
+   sudo chown -R fishcam:fishcam /home/fishcam/Desktop/wittypi/
+   ```
 
-- [ ] **Configure WittyPi:**
-  ```bash
-  sudo sh /home/fishcam/Desktop/wittypi/wittyPi.sh
-  ```
-  - Synchronize network time
-  - View/change other settings → Default state when powered: **ON**
+3. **Configure WittyPi**: `python configure_wittypi.py`
 
-- [ ] **Change hostname:**
-  - Open control center → System → Change hostname to `fishcam0x` (replace x with fishcam number)
+4. **Set hostname** (this becomes the FishCam ID):
+   ```bash
+   sudo raspi-config  # System > Change hostname to fishcam0x
+   ```
 
-- [ ] **Update FishCam ID in configuration:**
-  ```bash
-  nano /home/fishcam/Desktop/FishCam/FishCam/scripts/fishcam_config.yaml
-  ```
-  - Change `fishcam: id:` to `"fishcam0x"` (replace x with fishcam number)
+5. **Set buzzer beep count** (legacy mode only): edit `buzzer.beep_count` in config to a unique value per unit.
 
-- [ ] **Verify buzzer configuration:**
-  - Edit `fishcam_config.yaml`
-  - Ensure `mode: 'auto'` and fields in `auto:` section are correct
-  - Verify `total_fishcams` matches your deployment
+6. **Configure WiFi credentials** in `fishcam_config.yaml`.
 
-- [ ] **Expand filesystem:**
-  ```bash
-  sudo raspi-config
-  # Select: Advanced Options → Expand Filesystem
-  ```
+7. **Expand filesystem**: `sudo raspi-config` > Advanced Options > Expand Filesystem
 
-- [ ] **Adjust camera lens focus:**
-  ```bash
-  rpicam-hello --timeout 0
-  ```
-  - Physically adjust lens while viewing preview
-  - Press `Ctrl+C` to exit when done
+8. **Adjust lens focus and camera orientation:**
+   ```bash
+   rpicam-hello --timeout 0 --width 1920 --height 1080 --framerate 10
+   ```
+   Set `vflip`/`hflip` in config as needed.
 
-- [ ] **Adjust camera orientation:**
-  ```bash
-  rpicam-hello --timeout 0
-  ```
-  - Test camera orientation
-  - Adjust `vflip` and `hflip` in `fishcam_config.yaml` if needed
-  - Add colored tape to chassis and bottle to indicate "up" side
+9. **Configure power saving mode** in `fishcam_config.yaml`. See [POWER_SAVING_SETUP.md](FishCam/POWER_SAVING_SETUP.md) for hardware wiring.
 
-- [ ] **Label the chassis** with "fishcam0x"
+10. **Run pre-deployment wizard**: `python start_new_deployment.py`
 
-- [ ] **Install coin battery** on the board (for real-time clock)
-
-- [ ] **Close the bottle/housing**
-
-- [ ] **Pressure test:** Test that bottle is sealed properly using pump
+11. **Physical checks**: coin battery, camera cable, O-rings, seal, pressure test.
 
 ---
 
 ### Pre-Deployment Checklist
 
-Before deploying:
-
-- [ ] Test video recording: `python captureVideo.py` (stop with `Ctrl+C` after one video)
-- [ ] Test buzzer: `python runBuzzer.py`
-- [ ] Visualize buzzer sequences: `python visualize_buzzer_sequences.py`
-- [ ] Check logs in `../logs/` for any errors
+- [ ] Run `python start_new_deployment.py` (covers most steps below)
+- [ ] Verify video recording: `python run_video.py` (stop with Ctrl+C after one clip)
+- [ ] Test buzzer: `python run_buzzer.py`
+- [ ] Check IMU: `python monitor_imu.py`
+- [ ] Run system check: `bash verify_fishcam.sh`
 - [ ] Verify SD card has sufficient space
 - [ ] Verify battery is fully charged
-- [ ] External label on housing matches `fishcam.id` in config
+- [ ] External label matches hostname
+
+---
+
+## Power Saving and Battery Life
+
+FishCam supports optional power saving mode for extended deployments. See [POWER_SAVING_SETUP.md](FishCam/POWER_SAVING_SETUP.md) for hardware setup.
+
+**Control**: Reed switch + magnet toggles between deployment (power saving) and configuration (full power) modes.
+
+| Configuration | Power Draw | Battery Life (10,000 mAh)* |
+|--------------|------------|---------------------------|
+| Video only (no power saving) | ~300-350 mA | ~28 hours |
+| Video + High Endurance SD card | ~250-300 mA | ~33 hours |
+| Video + Power Saving + High Endurance | ~150-200 mA | ~50-66 hours |
+| Optimized (all features) | ~100-150 mA | ~66-100 hours |
+
+*Assumes 80% usable capacity. Actual runtime varies with resolution, framerate, and conditions.
+
+### Recommended SD Card: SanDisk High Endurance
+
+- Optimized for continuous recording (designed for dashcams/security cameras)
+- Lower power consumption (~50-100 mA vs ~150-200 mA for standard cards)
+- Better write endurance (up to 10,000 hours continuous recording)
+- Temperature rated (-25C to 85C)
+
+---
+
+## Multi-FishCam Deployment
+
+For deploying multiple fishcams with m-sequence buzzer mode (recommended):
+
+1. Use the same `fishcam_config.yaml` on all units (same `msequence_n`, `chip_duration_sec`, `trigger_times`).
+2. Set each unit's hostname to a unique `fishcamXX` (e.g., fishcam01, fishcam02, ...). The m-sequence is automatically derived from the unit number.
+3. All fishcams play unique sequences at the same trigger times, enabling TDOA cross-correlation.
+
+For legacy beep mode, set `sequence_mode: 'beep'` and assign a unique `beep_count` per unit.
